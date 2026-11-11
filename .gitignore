@@ -47,3 +47,4 @@ db_backup/
 
 # Generated temporary files
 backend/tmp/*.pem
+*.pem
