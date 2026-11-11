@@ -5,3 +5,4 @@ __pycache__/
 var/
 *.dump
 *.enc
+.env.local
