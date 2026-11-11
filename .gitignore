@@ -1,0 +1,49 @@
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node.js
+node_modules/
+dist/
+build/
+
+# Database backups
+db_backup/
+*.sql
+*.dump
+*.sqlite
+*.sqlite3
+
+# Archive files
+*.rar
+*.zip
+*.7z
+*.bak
+
+# Generated PDF review artifacts
+/output/pdf/
+
+# Local files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+db_backup/
+
+backend/tmp/
+
+# Database backups
+db_backup/
+
+# Generated temporary files
+backend/tmp/
