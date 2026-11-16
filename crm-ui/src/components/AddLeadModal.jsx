@@ -12,8 +12,11 @@ const fieldClass =
 const labelClass =
     "flex min-w-0 flex-col gap-2 text-xs font-semibold text-slate-800";
 
-export default function AddLeadModal({ onClose, onSave, saveError = "", saving = false, fixedDivision }) {
+export default function AddLeadModal({ onClose, onSave, saveError = "", saving = false, allowedDivisions = divisions, preferredDivision }) {
     const preferences = runtimeSettings();
+    const fixedDivision = allowedDivisions.length === 1 ? allowedDivisions[0] : null;
+    const defaultDivision = [preferredDivision, preferences.workspace.defaultDivision, "nemilink"]
+        .find((division) => allowedDivisions.includes(division)) ?? allowedDivisions[0];
     const dialogRef = useRef(null);
     const [customerLink, setCustomerLink] = useState({ customer: "", customerId: null });
     const [error, setError] = useState("");
@@ -126,10 +129,10 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
                             Division *
                             {fixedDivision ? <span className={fieldClass}>{divisionLabel(fixedDivision)}</span> : <select
                                 name="division"
-                                defaultValue={preferences.workspace.defaultDivision === "All divisions" ? "nemilink" : preferences.workspace.defaultDivision}
+                                defaultValue={defaultDivision}
                                 className={fieldClass}
                             >
-                                {divisions.map((division) => (
+                                {allowedDivisions.map((division) => (
                                     <option key={division} value={division}>{divisionLabel(division)}</option>
                                 ))}
                             </select>}

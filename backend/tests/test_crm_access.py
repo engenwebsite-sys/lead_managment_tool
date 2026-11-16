@@ -120,6 +120,33 @@ class CrmAccessTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/leads", headers=staff, json={**payload, "division": "MMC"}).status_code, 403)
         self.assertEqual(self.client.post("/api/leads", headers=staff, json=payload).status_code, 201)
 
+    def test_staff_can_view_three_divisions_and_add_in_only_one(self):
+        access = {"ENGEN": True, "nemilink": False, "ClearCode Labs": False}
+        payload = {"customer": "New prospect", "description": "Firmware"}
+        account = self.client.post("/api/users", json={
+            "name": "Chan", "email": "multi@example.test", "password": TEST_PASSWORD, "leadAccess": access,
+        })
+        self.assertEqual(account.status_code, 201, account.text)
+        self.assertEqual(account.json()["leadAccess"], access)
+        login = self.client.post("/api/auth/login", json={"email": "multi@example.test", "password": TEST_PASSWORD})
+        self.assertEqual(login.json()["user"]["leadAccess"], access)
+        staff = {"Authorization": "Bearer " + login.json()["accessToken"]}
+        for division in [*access, "MMC"]:
+            lead = self.client.post("/api/leads", json={**payload, "division": division})
+            self.assertEqual(lead.status_code, 201, lead.text)
+            detail = self.client.get(f"/api/leads/{lead.json()['id']}", headers=staff)
+            self.assertEqual(detail.status_code, 200 if division in access else 404)
+            created = self.client.post("/api/leads", headers=staff, json={**payload, "division": division})
+            self.assertEqual(created.status_code, 201 if access.get(division) else 403)
+        rows = self.client.get("/api/leads", headers=staff).json()
+        self.assertEqual({row["division"] for row in rows}, set(access))
+        self.assertEqual(self.client.get("/api/workspace/overview", headers=staff).json()["metrics"]["leads"]["total"], 4)
+        path = "/api/users/" + account.json()["id"]
+        updated = self.client.put(path, json={"expectedVersion": 1, "leadAccess": {"ENGEN": False}})
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(updated.json()["leadAccess"], {"ENGEN": False})
+        self.assertEqual(self.client.get("/api/leads", headers=staff).status_code, 401)
+
     def test_followups_inherit_lead_access_and_reassignment(self):
         lead = self.lead()
         self.assign("leads", lead)
@@ -161,6 +188,77 @@ class CrmAccessTests(unittest.TestCase):
             self.assertEqual(report["totals"]["totalQuotations"], total)
             for path in ["leads", "sales"]:
                 self.assertEqual(len(self.client.get("/api/reports/" + path, headers=self.headers[number]).json()["rows"]), total)
+
+    def test_quotation_history_uses_each_revisions_original_division(self):
+        quote = self.quote()
+        path = f"/api/quotations/{quote['id']}"
+        original_pdf = quote["versions"][0]["pdfPath"]
+        revised = self.client.put(path, json={"expectedVersion": quote["version"], "document": {
+            "number": quote["number"], "customer": quote["customer"], "division": "ENGEN",
+            "date": "2026-11-05", "validUntil": "2026-12-05",
+            "items": [{"description": "Revised scope", "quantity": 1, "rate": 100}],
+        }})
+        self.assertEqual(revised.status_code, 200, revised.text)
+        updated = revised.json()
+        self.assertEqual(len(updated["versions"]), 2)
+        self.assertEqual(self.assign("quotations", updated, target=3).status_code, 200)
+
+        staff = self.headers[3]
+        detail = self.client.get(path, headers=staff).json()
+        visible_pdf = updated["versions"][-1]["pdfPath"]
+        self.assertEqual([row["pdfPath"] for row in detail["versions"]], [visible_pdf])
+        summary = self.client.get("/api/quotations?paged=true&summary=true", headers=staff).json()["items"][0]
+        self.assertEqual(summary["versionCount"], 1)
+        self.assertEqual(summary["versions"][0]["pdfPath"], visible_pdf)
+        self.assertEqual(self.client.get(original_pdf, headers=staff).status_code, 404)
+        self.assertEqual(self.client.get(visible_pdf, headers=staff).status_code, 200)
+        self.assertEqual(self.client.get(path + "/pdf", headers=staff).status_code, 200)
+        self.assertEqual(self.client.get(original_pdf).status_code, 200)
+
+    def test_removing_last_division_closes_customer_and_quotation_access(self):
+        customer = self.customer()
+        quote = self.quote()
+        self.assertEqual(self.assign("customers", customer).status_code, 200)
+        self.assertEqual(self.assign("quotations", quote).status_code, 200)
+        account = self.accounts[2]
+        saved = self.client.put(f"/api/users/{account.id}", json={"expectedVersion": account.version, "leadAccess": {}})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(self.client.get("/api/customers", headers=self.headers[2]).status_code, 401)
+        login = self.client.post("/api/auth/login", json={"email": account.email, "password": TEST_PASSWORD})
+        self.assertEqual(login.status_code, 200, login.text)
+        staff = {"Authorization": "Bearer " + login.json()["accessToken"]}
+        for module, record in [("customers", customer), ("quotations", quote)]:
+            self.assertEqual(self.client.get(f"/api/{module}", headers=staff).json(), [])
+            self.assertEqual(self.client.get(f"/api/{module}/{record['id']}", headers=staff).status_code, 404)
+        self.assertEqual(self.client.put(f"/api/customers/{customer['id']}", headers=staff,
+                                         json={"expectedVersion": 2, "notes": "Denied"}).status_code, 404)
+        self.assertEqual(self.client.put(f"/api/quotations/{quote['id']}", headers=staff,
+                                         json={"expectedVersion": 2, "status": "Sent"}).status_code, 404)
+        self.assertEqual(self.client.get(quote["versions"][0]["pdfPath"], headers=staff).status_code, 404)
+        self.assertEqual(self.client.post("/api/customers", headers=staff,
+                                          json={"name": "Denied", "divisions": ["MMC"], "contacts": [{"phone": "1234567890"}]}).status_code, 403)
+        self.assertEqual(self.client.post("/api/quotations", headers=staff, json={
+            "number": "DENIED", "customer": "Denied", "division": "MMC", "date": "2026-11-05",
+            "items": [{"description": "Item", "quantity": 1, "rate": 100}],
+        }).status_code, 403)
+
+    def test_staff_customer_edits_preserve_other_divisions_and_reject_new_ones(self):
+        payload = {"name": "Shared customer", "divisions": ["MMC", "ENGEN"], "contacts": [{"phone": "1234567890"}]}
+        created = self.client.post("/api/customers", json=payload)
+        self.assertEqual(created.status_code, 201, created.text)
+        customer = created.json()
+        self.assertEqual(self.assign("customers", customer).status_code, 200)
+        staff = self.headers[2]
+        path = f"/api/customers/{customer['id']}"
+        self.assertEqual(self.client.get(path, headers=staff).json()["divisions"], ["MMC"])
+        self.assertEqual(self.client.get("/api/customers?division=ENGEN", headers=staff).json(), [])
+        self.assertEqual(self.client.post("/api/customers", headers=staff, json=payload).status_code, 403)
+        self.assertEqual(self.client.put(path, headers=staff,
+                                         json={"expectedVersion": 2, "divisions": ["MMC", "Visotonics"]}).status_code, 403)
+        saved = self.client.put(path, headers=staff, json={"expectedVersion": 2, "divisions": ["MMC"], "notes": "Updated"})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["divisions"], ["MMC"])
+        self.assertEqual(self.client.get(path).json()["divisions"], ["MMC", "ENGEN"])
 
     def test_admin_reassignment_conflicts_inactive_users_and_unassignment(self):
         lead = self.lead()

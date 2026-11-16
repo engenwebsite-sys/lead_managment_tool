@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { Plus, Trash2, Save } from "lucide-react";
-import { divisionLabel, divisions } from "../../data/crm";
+import { divisionLabel } from "../../data/crm";
+import { useSettings } from "../../context/SettingsContext";
+import { viewLeadDivisions } from "../../lib/permissions";
 import { Button, IconButton } from "../ui";
 import CustomerField from "../CustomerField";
 import QuoteDialog from "./QuoteDialog";
@@ -39,6 +41,8 @@ function newItem() {
 }
 
 export default function QuoteForm({ mode, quotation, onClose, onSave }) {
+    const { user } = useSettings();
+    const divisions = viewLeadDivisions(user);
     const isUpload = mode === "upload" || mode === "revision";
     const defaults = runtimeSettings().quotation;
     const submitting = useRef(false);

@@ -73,7 +73,12 @@ class SettingsScenarios(unittest.TestCase):
         self.assertEqual(self.settings()["company"]["name"], "QA Engineering")
         self.assertEqual(saved["versions"]["shared"], 2)
         self.assertEqual(self.client.get("/api/settings/divisions", headers=self.staff_headers).json()[0]["prefix"], "HW")
-        self.assertFalse(self.settings(self.staff_headers)["canManageShared"])
+        staff_settings = self.settings(self.staff_headers)
+        self.assertFalse(staff_settings["canManageShared"])
+        self.assertEqual(set(staff_settings["divisions"]), {"MMC"})
+        self.assertEqual([row["name"] for row in self.client.get("/api/settings/divisions", headers=self.staff_headers).json()], ["MMC"])
+        self.save({"expectedPersonalVersion": 0, "workspace": {**staff_settings["workspace"], "defaultDivision": "ENGEN"}},
+                  self.staff_headers, 422)
         self.save({"expectedSharedVersion": 2, "company": {"name": "Forbidden"}}, self.staff_headers, 403)
         self.assertEqual(self.client.get("/api/settings").status_code, 401)
         self.assertEqual(self.client.put("/api/settings", json={"expectedSharedVersion": 2, "leads": initial["leads"]}).status_code, 401)

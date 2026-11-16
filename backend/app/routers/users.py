@@ -20,12 +20,38 @@ def require_owner(user: User = Depends(get_current_user)):
 
 def snapshot(user):
     return {"name": user.name, "email": user.email, "role": user.role, "isActive": user.is_active,
-            "leadDivision": user.lead_division, "canCreateLeads": user.can_create_leads, "version": user.version}
+            "leadDivision": user.lead_division, "canCreateLeads": user.can_create_leads,
+            "leadAccess": user.lead_access, "version": user.version}
 
 
 def validate_lead_access(role, division, can_create):
     if (division is not None and role != "Staff") or (can_create and (role != "Staff" or division is None)):
         raise HTTPException(422, "Lead creation access requires a Staff account with an assigned division")
+
+
+def resolve_lead_access(changes, role, target=None):
+    legacy_fields = {"lead_division", "can_create_leads"}
+    if "lead_access" in changes:
+        if legacy_fields & changes.keys():
+            raise HTTPException(422, "Send either leadAccess or the legacy division fields")
+        access = changes.pop("lead_access")
+        if access and role != "Staff":
+            raise HTTPException(422, "Division permissions apply only to Staff accounts")
+        # A previous server version can represent only a single division.
+        division, can_create = next(iter(access.items())) if len(access) == 1 else (None, False)
+        changes.update(lead_division_access=access, lead_division=division, can_create_leads=can_create)
+        return
+
+    if target is not None and role == "Admin" and target.role != role:
+        changes.setdefault("lead_division", None)
+        changes.setdefault("can_create_leads", False)
+    if target is not None and len(target.lead_access) > 1 and role == "Staff" and legacy_fields & changes.keys():
+        raise HTTPException(409, "Use division permissions to edit an account with multiple divisions")
+    if legacy_fields & changes.keys():
+        division = changes.get("lead_division", target.lead_division if target else None)
+        can_create = changes.get("can_create_leads", target.can_create_leads if target and division else False)
+        validate_lead_access(role, division, can_create)
+        changes.update(lead_division_access=None, lead_division=division, can_create_leads=can_create)
 
 
 def can_read(actor, target):
@@ -58,12 +84,12 @@ def get_user(user_id: str, response: Response, actor: User = Depends(get_current
 @router.post("", status_code=201, response_model=ManagedUser)
 def create_user(data: UserCreate, actor: User = Depends(require_owner), db: Session = Depends(get_db)):
     with database_operation(db):
-        validate_lead_access(data.role, data.lead_division, data.can_create_leads)
+        access = data.model_dump(exclude_unset=True, include={"lead_access", "lead_division", "can_create_leads"})
+        resolve_lead_access(access, data.role)
         if data.role == "Admin" and db.scalar(select(User.id).where(User.admin_slot == 2)) is not None:
             raise HTTPException(409, "Maximum two Admin accounts allowed. Demote the second administrator before adding another")
         item = User(name=data.name, email=data.email, role=data.role, admin_slot=2 if data.role == "Admin" else None,
-                    password_hash=passwords.hash(data.password), lead_division=data.lead_division,
-                    can_create_leads=data.can_create_leads)
+                    password_hash=passwords.hash(data.password), **access)
         db.add(item)
         db.flush()
         db.add(UserAuditEvent(actor_id=actor.id, target_id=item.id, action="Account created", changes={"after": snapshot(item)}))
@@ -86,13 +112,7 @@ def update_user(user_id: str, data: UserUpdate, actor: User = Depends(require_ow
         changes.pop("expected_version")
         raw_password = changes.pop("password", None)
         role = changes.get("role", target.role)
-        if role == "Admin" and target.role != role:
-            changes.setdefault("lead_division", None)
-            changes.setdefault("can_create_leads", False)
-        if changes.get("lead_division", target.lead_division) is None:
-            changes.setdefault("can_create_leads", False)
-        validate_lead_access(role, changes.get("lead_division", target.lead_division),
-                             changes.get("can_create_leads", target.can_create_leads))
+        resolve_lead_access(changes, role, target)
         if role == "Admin" and db.scalar(select(User.id).where(User.admin_slot == 2, User.id != target.id)) is not None:
             raise HTTPException(409, "Maximum two Admin accounts allowed")
         before = snapshot(target)
@@ -100,6 +120,8 @@ def update_user(user_id: str, data: UserUpdate, actor: User = Depends(require_ow
             key in changes and changes[key] != getattr(target, key)
             for key in ("email", "role", "is_active", "lead_division", "can_create_leads")
         )
+        if "lead_division_access" in changes and changes["lead_division_access"] is not None:
+            revoke = revoke or changes["lead_division_access"] != target.lead_access
         changes.update(admin_slot=2 if role == "Admin" else None, version=target.version + 1)
         if role != target.role:
             changes["quotation_access"] = False

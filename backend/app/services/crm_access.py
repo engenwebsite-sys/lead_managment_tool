@@ -1,6 +1,6 @@
 """Explicit CRM query and mutation policy. Display names never grant access."""
 from fastapi import Depends, HTTPException
-from sqlalchemy import Text, cast, select, false
+from sqlalchemy import Text, cast, or_, select, false
 from app.core.security import get_current_user
 from app.db.database import get_db
 from app.models.lead import Lead
@@ -31,17 +31,18 @@ def scoped(db, query, model):
     if model is Quotation and not quotations_allowed(user):
         return query.where(false())
     if user is not None and user.role == "Staff":
+        divisions = tuple(user.lead_access)
+        if not divisions:
+            return query.where(false())
         if model is Lead:
-            return query.where(Lead.division == user.lead_division) if user.lead_division else query.where(false())
+            return query.where(Lead.division.in_(divisions))
         if model is FollowUp:
             leads = scoped(db, select(Lead.id), Lead).where(Lead.assignee_user_id == user.id)
             return query.where(FollowUp.lead_id.in_(leads))
         query = query.where(model.assignee_user_id == user.id)
-        if user.lead_division:
-            if model is Quotation:
-                return query.where(Quotation.division == user.lead_division)
-            return query.where(cast(model.divisions, Text).contains('"' + user.lead_division + '"'))
-        return query
+        if model is Quotation:
+            return query.where(Quotation.division.in_(divisions))
+        return query.where(or_(*(cast(model.divisions, Text).contains(f'"{division}"') for division in divisions)))
     return query
 
 
@@ -51,24 +52,21 @@ def require_record(db, record):
         raise HTTPException(404, "Record not found")
     if user is not None and user.role == "Staff":
         divisions = [record.division] if isinstance(record, Lead) else record.divisions
-        if (isinstance(record, Lead) or user.lead_division) and user.lead_division not in divisions:
+        if not user.lead_access.keys() & set(divisions):
             raise HTTPException(404, "Record not found")
     return record
 
 
 def require_lead_creation(db, division):
     user = actor(db)
-    if user is not None and user.role == "Staff":
-        if not user.can_create_leads or not user.lead_division:
-            raise HTTPException(403, "Your administrator has not enabled lead creation")
-        if division != user.lead_division:
-            raise HTTPException(403, "You can only add leads to your assigned division")
+    if user is not None and user.role == "Staff" and not user.lead_access.get(division, False):
+        raise HTTPException(403, "Your administrator has not enabled lead creation for this division")
 
 
 def require_record_division(db, divisions):
     user = actor(db)
-    if user is not None and user.role == "Staff" and user.lead_division and user.lead_division not in divisions:
-        raise HTTPException(403, "Use your assigned division")
+    if user is not None and user.role == "Staff" and (not divisions or set(divisions) - user.lead_access.keys()):
+        raise HTTPException(403, "Use only your assigned divisions")
 
 
 def require_admin(db, detail="Only administrators can delete or reassign CRM records"):

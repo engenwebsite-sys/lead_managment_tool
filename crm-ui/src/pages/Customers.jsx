@@ -15,7 +15,8 @@ import {
     Eye,
     Trash2,
 } from "lucide-react";
-import { divisionLabel, divisions } from "../data/crm";
+import { divisionLabel } from "../data/crm";
+import { viewLeadDivisions } from "../lib/permissions";
 import { getCustomersPage, getCustomerById, createCustomer, updateCustomer, deleteCustomer } from "../services/customersApi";
 import { getQuotationsPage, getQuotationById } from "../services/quotationsApi";
 import PdfViewer from "../components/quotations/PdfViewer";
@@ -393,6 +394,7 @@ function CustomerDetails({
 
 export default function Customers({ onChanged }) {
     const { user: accessUser } = useSettings();
+    const divisions = viewLeadDivisions(accessUser);
     const [actionError, setActionError] = useState("");
     const [reload, setReload] = useState(0);
     const [linking, setLinking] = useState(false);
@@ -429,7 +431,7 @@ export default function Customers({ onChanged }) {
                     Contact details, references and customer conversations.
                     Activity is linked by Customer ID. Unlinked enquiries remain in Leads.
                 </p>
-                <Button disabled={loading} onClick={() => setEditor({ customer: null })}>
+                <Button disabled={loading || !divisions.length} onClick={() => setEditor({ customer: null })}>
                     <Plus size={16} /> Add customer
                 </Button>
             </div>
@@ -480,11 +482,12 @@ export default function Customers({ onChanged }) {
 
                     <select
                         aria-label="Filter customers by division"
+                        disabled={!divisions.length}
                         value={division}
                         onChange={(event) => setDivision(event.target.value)}
                         className={selectClass}
                     >
-                        <option>All divisions</option>
+                        <option value="All divisions">{accessUser.role === "Admin" ? "All divisions" : divisions.length ? "All assigned divisions" : "No divisions assigned"}</option>
                         {divisions.map((name) => (
                             <option key={name} value={name}>{divisionLabel(name)}</option>
                         ))}

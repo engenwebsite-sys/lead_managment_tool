@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { canAccessQuotations } from "../lib/permissions";
+import { canAccessQuotations, viewLeadDivisions } from "../lib/permissions";
 import RolePermissions from "../components/settings/RolePermissions";
 import PasswordChange from "../components/settings/PasswordChange";
 import OperationsPanel from "../components/settings/OperationsPanel";
@@ -21,7 +21,7 @@ import {
     Check,
 } from "lucide-react";
 import { Button, Card } from "../components/ui";
-import { divisionLabel, divisions } from "../data/crm";
+import { divisionLabel } from "../data/crm";
 
 const tabs = [
     { id: "profile", label: "My profile", icon: UserRound },
@@ -138,6 +138,7 @@ export default function Settings({ user }) {
 }
 
 function SettingsEditor({ user, initialSettings, onSaved }) {
+    const divisions = viewLeadDivisions(user);
     const visibleTabs = tabs.filter(({ id }) => (id !== "quotation" || canAccessQuotations(user)) && (id !== "permissions" || user.role === "Admin"));
     const [tab, setTab] = useState("profile");
     const [settings, setSettings] = useState(() => structuredClone(initialSettings));
@@ -332,7 +333,7 @@ function SettingsEditor({ user, initialSettings, onSaved }) {
                                     />
                                 </div>
 
-                                <div className="mt-8 border-t border-slate-200 pt-6">
+                                {divisions.length > 0 && <div className="mt-8 border-t border-slate-200 pt-6">
                                     <h3 className="mb-5 text-sm font-bold text-slate-950">
                                         Division details
                                     </h3>
@@ -372,7 +373,7 @@ function SettingsEditor({ user, initialSettings, onSaved }) {
                                             }
                                         />
                                     </div>
-                                </div>
+                                </div>}
                             </Section>
                         )}
 
@@ -552,11 +553,11 @@ function SettingsEditor({ user, initialSettings, onSaved }) {
                                         options={["Hover to expand", "Always expanded"]}
                                         {...bind("workspace", "sidebar")}
                                     />
-                                    <Select
+                                    {divisions.length > 0 && <Select
                                         label="Default division"
                                         options={["All divisions", ...divisions]}
                                         {...bind("workspace", "defaultDivision")}
-                                    />
+                                    />}
                                     <Select
                                         label="Table rows per page"
                                         options={["10", "25", "50"]}

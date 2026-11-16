@@ -50,6 +50,7 @@ class VerifyRecoveryOtpRequest(BaseModel):
 
 
 class UserResponse(ApiModel):
+    lead_access: dict[Division, bool] = Field(default_factory=dict, alias="leadAccess")
     lead_division: Division | None = Field(default=None, alias="leadDivision")
     can_create_leads: bool = Field(default=False, alias="canCreateLeads")
     can_access_quotations: bool = Field(alias="canAccessQuotations")

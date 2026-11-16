@@ -4,20 +4,36 @@ import { createUser, getUsers, updateUser } from "../../services/usersApi";
 import { Avatar, Button, Card, CardHeading, EmptyState, IconButton } from "../ui";
 import Modal from "../Modal";
 import { divisionLabel, divisions } from "../../data/crm";
+import { leadAccessFor } from "../../lib/permissions";
 
 const fieldClass = "mt-1.5 block min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100";
 
 function AccountForm({ account, adminCount, onSave, onClose }) {
-  const [form, setForm] = useState({ name: account?.name || "", email: account?.email || "", role: account?.role || "Staff", isActive: account?.isActive ?? true, password: "", confirmPassword: "", leadDivision: account?.leadDivision || "", canCreateLeads: account?.canCreateLeads === true });
+  const [form, setForm] = useState({
+    name: account?.name || "", email: account?.email || "", role: account?.role || "Staff",
+    isActive: account?.isActive ?? true, password: "", confirmPassword: "", leadAccess: leadAccessFor(account),
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
   const adminAvailable = adminCount < 2 || account?.role === "Admin";
   function bind(key) { return { value: form[key], onChange: (event) => setForm((current) => ({ ...current, [key]: event.target.value })) }; }
+  function setDivisionAccess(division, allowView, allowAdd) {
+    setForm((current) => {
+      const leadAccess = { ...current.leadAccess };
+      if (allowView) leadAccess[division] = allowAdd;
+      else delete leadAccess[division];
+      return { ...current, leadAccess };
+    });
+  }
   async function submit(event) {
     event.preventDefault();
     if (lock.current) return;
     if (form.password !== form.confirmPassword) { setError("Passwords do not match."); return; }
+    if (!account && form.role === "Staff" && Object.keys(form.leadAccess).length === 0) {
+      setError("Choose at least one division for this staff account.");
+      return;
+    }
     lock.current = true; setBusy(true); setError("");
     try { await onSave(form); } catch (failure) { setError(failure.message); }
     finally { lock.current = false; setBusy(false); }
@@ -26,23 +42,30 @@ function AccountForm({ account, adminCount, onSave, onClose }) {
     <form onSubmit={submit}><fieldset disabled={busy} className="min-w-0 space-y-4 p-4 sm:p-5">
       <div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-800">Name<input required maxLength={120} autoComplete="name" className={fieldClass} {...bind("name")} /></label><label className="text-xs font-semibold text-slate-800">Email<input required type="email" maxLength={254} autoComplete="off" className={fieldClass} {...bind("email")} /></label></div>
       <label className="block text-xs font-semibold text-slate-800">Role<select className={fieldClass} {...bind("role")}><option>Staff</option><option disabled={!adminAvailable}>Admin</option></select></label>
-      {form.role === "Staff" && <>
-        <label className="block text-xs font-semibold text-slate-800">Lead division
-          <select required={!account} className={fieldClass} value={form.leadDivision} onChange={(event) => {
-            const leadDivision = event.target.value;
-            setForm((current) => ({ ...current, leadDivision, canCreateLeads: Boolean(leadDivision && current.canCreateLeads) }));
-          }}>
-            <option value="">No division assigned</option>
-            {divisions.map((division) => <option key={division} value={division}>{divisionLabel(division)}</option>)}
-          </select>
-        </label>
-        <label className="flex items-center gap-2 text-xs font-semibold text-slate-800">
-          <input type="checkbox" className="size-4 accent-teal-800" disabled={!form.leadDivision} checked={form.canCreateLeads}
-            onChange={(event) => setForm({ ...form, canCreateLeads: event.target.checked })} />
-          Allow adding leads
-        </label>
-        <p className="text-xs text-slate-600">Staff can view all leads in the assigned division. Adding leads requires this permission.</p>
-      </>}
+      {form.role === "Staff" && <fieldset className="min-w-0">
+        <legend className="text-xs font-semibold text-slate-800">Lead division permissions</legend>
+        <div className="mt-2 divide-y divide-slate-200 rounded-lg border border-slate-200">
+          <div aria-hidden="true" className="grid grid-cols-[minmax(0,1fr)_5rem_5rem] items-center p-2 text-center text-xs font-semibold text-slate-700">
+            <span className="text-left">Division</span><span>View leads</span><span>Add leads</span>
+          </div>
+          {divisions.map((division) => {
+            const label = divisionLabel(division);
+            const canView = Object.hasOwn(form.leadAccess, division);
+            return <div key={division} className="grid min-h-10 grid-cols-[minmax(0,1fr)_5rem_5rem] items-center px-2 text-sm text-slate-800">
+              <span>{label}</span>
+              <label className="flex min-h-10 items-center justify-center">
+                <input type="checkbox" aria-label={`View leads in ${label}`} className="size-4 accent-teal-800"
+                  checked={canView} onChange={(event) => setDivisionAccess(division, event.target.checked, false)} />
+              </label>
+              <label className="flex min-h-10 items-center justify-center">
+                <input type="checkbox" aria-label={`Add leads in ${label}`} className="size-4 accent-teal-800"
+                  disabled={!canView} checked={form.leadAccess[division] === true}
+                  onChange={(event) => setDivisionAccess(division, true, event.target.checked)} />
+              </label>
+            </div>;
+          })}
+        </div>
+      </fieldset>}
       {!adminAvailable && <p className="text-xs leading-5 text-slate-600">Both Admin slots are used. New accounts can be Staff only until the second administrator is demoted.</p>}
       <div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-800">{account ? "New password (optional)" : "Password"}<input type="password" required={!account} minLength={8} maxLength={128} autoComplete="new-password" className={fieldClass} {...bind("password")} /></label><label className="text-xs font-semibold text-slate-800">Confirm password<input type="password" required={!account || Boolean(form.password)} minLength={8} maxLength={128} autoComplete="new-password" className={fieldClass} {...bind("confirmPassword")} /></label></div>
       <p className="text-xs leading-5 text-slate-600">Passwords require 8–128 characters and are stored securely. Existing passwords cannot be viewed.</p>
@@ -87,7 +110,9 @@ export default function UserManagement({ currentUser }) {
         <Avatar name={account.name} /><div className="min-w-0 flex-1"><strong className="block break-words text-sm text-slate-950">{account.name}{account.id === currentUser?.id && <span className="ml-2 text-[10px] font-medium text-slate-600">You</span>}</strong><p className="mt-1 break-all text-xs text-slate-700">{account.email}</p><p className="mt-1 text-[10px] text-slate-500">Created {new Date(account.createdAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}</p></div>
         <div className="col-start-2 flex min-w-0 flex-wrap items-center gap-2 sm:col-start-auto"><span className={`rounded-md px-2 py-1 text-[10px] font-semibold ${account.isOwner ? "bg-lime-100 text-teal-950" : "bg-teal-50 text-teal-900"}`}>{account.isOwner ? "Owner · Admin" : account.role}</span><span className={`rounded-md px-2 py-1 text-[10px] font-semibold ${account.isActive ? "bg-emerald-50 text-emerald-900" : "bg-slate-100 text-slate-700"}`}>{account.isActive ? "Active" : "Inactive"}</span>{directory.canManageUsers && !account.isOwner && <IconButton aria-label={`Edit ${account.name}`} title="Edit login account" onClick={() => setEditor({ account })}><Pencil size={17} /></IconButton>}</div>
         {account.role === "Staff" && <p className="col-start-2 text-xs text-slate-600">
-          {account.leadDivision ? `${divisionLabel(account.leadDivision)} · ${account.canCreateLeads ? "View and add leads" : "View leads only"}` : "Lead division unassigned"}
+          {Object.entries(leadAccessFor(account)).map(([division, canAdd]) =>
+            `${divisionLabel(division)} (${canAdd ? "View + add" : "View only"})`
+          ).join(", ") || "Lead division unassigned"}
         </p>}
       </article>) : <EmptyState icon={Users} title="No accounts found" description="Adjust your search or ask the Owner to create staff accounts." />}</div>
       <p className="text-[11px] leading-5 text-slate-600">Account changes save immediately. Module access is managed for the whole Staff role in Roles & permissions. The Owner account is protected from edits and deactivation.</p>

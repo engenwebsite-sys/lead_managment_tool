@@ -1,11 +1,11 @@
 from datetime import datetime, time, timedelta, timezone
-from sqlalchemy import Text, case, cast, func, or_, select
+from sqlalchemy import Text, case, cast, false, func, or_, select
 from app.models.lead import Lead
 from app.models.customer import Customer
 from app.models.follow_up import FollowUp
 from app.models.quotation import Quotation
 from app.models.user import User
-from app.services.crm_access import scoped
+from app.services.crm_access import actor, scoped
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -60,6 +60,9 @@ def collection_query(db, model, filters, at):
     if filters.assignee_user_id:
         query = query.where(model.assignee_user_id == filters.assignee_user_id)
     if filters.division:
+        user = actor(db)
+        if model is Customer and user is not None and user.role == "Staff" and filters.division not in user.lead_access:
+            return query.where(false())
         query = query.where(cast(Customer.divisions, Text).contains('"' + filters.division + '"')) if model is Customer else query.where(model.division == filters.division)
     if model is Customer:
         if filters.type:

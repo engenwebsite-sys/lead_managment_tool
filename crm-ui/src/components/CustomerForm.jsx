@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { Plus, Save, Trash2 } from "lucide-react";
-import { divisionLabel, divisions } from "../data/crm";
+import { divisionLabel } from "../data/crm";
 import { useSettings } from "../context/SettingsContext";
+import { viewLeadDivisions } from "../lib/permissions";
 import { customerFormPayload } from "../lib/customerForm.js";
 import Modal from "./Modal";
 import ReferralFields from "./ReferralFields";
@@ -16,9 +17,10 @@ function Field({ label, children, wide = false }) {
 
 export default function CustomerForm({ customer, onSave, onClose }) {
   const { user } = useSettings();
+  const divisions = viewLeadDivisions(user);
   const [form, setForm] = useState(() => Object.fromEntries(["name", "type", "address", "city", "state", "postcode", "gst", "notes"].map((key) => [key, customer?.[key] || (key === "type" ? "Company" : "")])));
   const [contacts, setContacts] = useState(() => customer?.contacts?.length ? customer.contacts.map((contact) => ({ ...contact })) : [emptyContact()]);
-  const [selectedDivisions, setSelectedDivisions] = useState(customer?.divisions || []);
+  const [selectedDivisions, setSelectedDivisions] = useState(() => (customer?.divisions || []).filter((name) => divisions.includes(name)));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);

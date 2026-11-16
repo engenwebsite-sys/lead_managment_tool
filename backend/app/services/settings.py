@@ -22,6 +22,12 @@ def personal_settings(db, user_id):
     return PersonalData.model_validate(row.data if row else {}), row
 
 
+def visible_divisions(divisions, user):
+    if user.role == "Admin":
+        return divisions
+    return {name: value for name, value in divisions.items() if name in user.lead_access}
+
+
 def settings_response(db, user):
     anchor = select(literal(1).label("anchor")).subquery()
     shared_row, personal_row = db.execute(select(WorkspaceSettings, UserPreferences).select_from(anchor)
@@ -30,10 +36,13 @@ def settings_response(db, user):
     shared = SharedData.model_validate(shared_row.data if shared_row else {})
     personal = PersonalData.model_validate(personal_row.data if personal_row else {})
     data = shared.model_dump(mode="json")
+    data["divisions"] = visible_divisions(data["divisions"], user)
     data.update(profile={"name": user.name, "email": user.email, "phone": personal.phone, "designation": personal.designation},
                 notifications=personal.notifications.model_dump(), workspace=personal.workspace.model_dump(),
                 versions={"shared": shared_row.version if shared_row else 1, "personal": personal_row.version if personal_row else 0, "profile": user.version},
                 canManageShared=user.is_owner, canAccessQuotations=quotations_allowed(user))
+    if user.role == "Staff" and data["workspace"]["defaultDivision"] not in user.lead_access:
+        data["workspace"]["defaultDivision"] = "All divisions"
     if not data["canAccessQuotations"]:
         data.pop("quotation")
         data["notifications"]["quotationExpiry"] = False

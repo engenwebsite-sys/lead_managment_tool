@@ -14,7 +14,8 @@ import {
     Pencil,
     Trash2,
 } from "lucide-react";
-import { divisionLabel, divisions } from "../data/crm";
+import { divisionLabel } from "../data/crm";
+import { viewLeadDivisions } from "../lib/permissions";
 import {
     Button,
     Card,
@@ -39,6 +40,7 @@ const selectClass =
 
 export default function Quotations({ onChanged }) {
     const { user: accessUser } = useSettings();
+    const divisions = viewLeadDivisions(accessUser);
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
     const [mode, setMode] = useState(null);
@@ -124,13 +126,13 @@ export default function Quotations({ onChanged }) {
                 <div className="flex flex-wrap gap-3">
                     <Button
                         variant="secondary"
-                        disabled={loading || Boolean(error) || busyId !== null}
+                        disabled={!divisions.length || loading || Boolean(error) || busyId !== null}
                         onClick={() => { setEditing(null); setMode("upload"); }}
                     >
                         <Upload size={16} /> Upload PDF
                     </Button>
                     <Button
-                        disabled={loading || Boolean(error) || busyId !== null}
+                        disabled={!divisions.length || loading || Boolean(error) || busyId !== null}
                         onClick={() => { setEditing(null); setMode("create"); }}
                     >
                         <Plus size={16} /> Create quotation
@@ -190,11 +192,12 @@ export default function Quotations({ onChanged }) {
 
                     <select
                         aria-label="Filter by division"
+                        disabled={!divisions.length}
                         value={division}
                         onChange={(event) => setDivision(event.target.value)}
                         className={selectClass}
                     >
-                        <option>All divisions</option>
+                        <option value="All divisions">{accessUser.role === "Admin" ? "All divisions" : divisions.length ? "All assigned divisions" : "No divisions assigned"}</option>
                         {divisions.map((name) => (
                             <option key={name} value={name}>{divisionLabel(name)}</option>
                         ))}

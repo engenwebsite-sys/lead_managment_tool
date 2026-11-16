@@ -132,6 +132,7 @@ class QuotationPermissionTests(unittest.TestCase):
             self.assertEqual(before, connection.execute(select(*(users.c[key] for key in metadata.tables["users"].c.keys())).order_by(users.c.id)).all())
             self.assertEqual({(row.lead_division, row.can_create_leads) for row in connection.execute(
                 select(users.c.lead_division, users.c.can_create_leads))}, {(None, False)})
+            self.assertEqual(connection.execute(select(users.c.lead_division_access).distinct()).scalars().all(), [None])
             after_sessions = {row["id"]: row for row in connection.execute(select(current.tables["auth_sessions"])).mappings()}
             staff_ids = {account.id for account in self.accounts[2:]}
             for before_session in sessions:

@@ -29,7 +29,15 @@ def profile_responses(rows, db):
     if not rows:
         return []
     counts = {customer_id: (total, won) for customer_id, total, won in db.execute(scoped(db, select(Lead.customer_id, func.count(), func.sum(case((Lead.status == "Won", 1), else_=0))), Lead).where(Lead.customer_id.in_([row.id for row in rows])).group_by(Lead.customer_id)).all()}
-    return [CustomerResponse.model_validate(row).model_copy(update={"lead_count": counts.get(row.id, (0, 0))[0], "stage": "Converted Customer" if counts.get(row.id, (0, 0))[1] else "Prospect"}) for row in rows]
+    user = actor(db)
+    result = []
+    for row in rows:
+        count, won = counts.get(row.id, (0, 0))
+        data = {"lead_count": count, "stage": "Converted Customer" if won else "Prospect"}
+        if user is not None and user.role == "Staff":
+            data["divisions"] = [division for division in row.divisions if division in user.lead_access]
+        result.append(CustomerResponse.model_validate(row).model_copy(update=data))
+    return result
 
 
 @router.post("", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
@@ -64,6 +72,12 @@ def update_customer(customer_id: str, data: CustomerUpdate, db: Session = Depend
         customer = find_customer(db, customer_id)
         expected_version(db, customer, data.expected_version)
         updates = data.model_dump(exclude_unset=True, by_alias=False, exclude={"expected_version"})
+        user = actor(db)
+        if user is not None and user.role == "Staff" and "divisions" in updates:
+            protected = [division for division in customer.divisions if division not in user.lead_access]
+            editable = [division for division in updates["divisions"] if division not in protected]
+            require_record_division(db, editable)
+            updates["divisions"] = editable + protected
         candidate = {field: getattr(customer, field) for field in CustomerCreate.model_fields}
         enforce_follow_assignment(db, updates)
         candidate.update(updates)
@@ -71,7 +85,6 @@ def update_customer(customer_id: str, data: CustomerUpdate, db: Session = Depend
             validated = CustomerCreate.model_validate(candidate).model_dump(by_alias=False)
         except ValidationError as error:
             raise HTTPException(status_code=422, detail=error_details(error)) from None
-        require_record_division(db, validated["divisions"])
         claim_version(db, Customer, customer, data.expected_version)
         for field in updates:
             setattr(customer, field, validated[field])

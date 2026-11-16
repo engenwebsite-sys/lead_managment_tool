@@ -39,7 +39,8 @@ def effective_status(item, today):
 
 
 def quote_rows(db, filters, today):
-    if not quotations_allowed(actor(db)):
+    user = actor(db)
+    if not quotations_allowed(user) or (user is not None and user.role == "Staff" and not user.lead_access):
         return []
     return [item for item in db.scalars(scoped(db, select(Quotation), Quotation).where(Quotation.deleted_at.is_(None))).all()
             if (not filters.division or item.division == filters.division)

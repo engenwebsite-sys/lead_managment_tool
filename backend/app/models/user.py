@@ -33,11 +33,20 @@ class User(Base):
     quotation_access: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     lead_division: Mapped[str | None] = mapped_column(String(40))
     can_create_leads: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    lead_division_access: Mapped[dict[str, bool] | None] = mapped_column(JSON(none_as_null=True))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
     admin_slot: Mapped[int | None] = mapped_column(Integer, nullable=True, default=default_admin_slot)
     version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    @property
+    def lead_access(self):
+        if self.role != "Staff":
+            return {}
+        if self.lead_division_access is not None:
+            return self.lead_division_access
+        return {self.lead_division: self.can_create_leads} if self.lead_division else {}
 
     @property
     def can_access_quotations(self):

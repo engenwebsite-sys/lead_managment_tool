@@ -14,7 +14,7 @@ from pypdf import PdfReader
 from sqlalchemy import select, update, func
 from sqlalchemy.orm import Session, load_only
 
-from app.services.crm_access import get_crm_db, scoped, require_admin, creation_assignment, require_record_division
+from app.services.crm_access import actor as crm_actor, get_crm_db, scoped, require_admin, creation_assignment, require_record_division
 from app.db.operations import database_operation
 from app.models.quotation import Quotation, QuotationFile
 from app.schemas.common import error_details
@@ -53,8 +53,16 @@ def snapshot(data, uploaded=False):
     return result
 
 
+def visible_files(db, query):
+    user = crm_actor(db)
+    if user is not None and user.role == "Staff":
+        return query.where(QuotationFile.snapshot["division"].as_string().in_(tuple(user.lead_access)))
+    return query
+
+
 def response(item, db):
-    files = db.scalars(select(QuotationFile).where(QuotationFile.quotation_id == item.id).order_by(QuotationFile.revision)).all()
+    query = select(QuotationFile).where(QuotationFile.quotation_id == item.id).order_by(QuotationFile.revision)
+    files = db.scalars(visible_files(db, query)).all()
     return {**item.document, "customerId": item.customer_id, "status": item.status, "id": item.id, "source": item.source, "version": item.version, "assigneeUserId": item.assignee_user_id,
             "createdAt": utc(item.created_at), "updatedAt": utc(item.updated_at),
             "versions": [{"id": f.id, "name": f.name, "revision": f.revision, "size": f.size, "sha256": f.sha256,
@@ -66,7 +74,9 @@ def summaries(rows, db):
     if not rows:
         return []
     ids = [row.id for row in rows]
-    latest = select(QuotationFile.quotation_id, func.max(QuotationFile.revision).label("revision"), func.count().label("count")).where(QuotationFile.quotation_id.in_(ids)).group_by(QuotationFile.quotation_id).subquery()
+    revisions = select(QuotationFile.quotation_id, func.max(QuotationFile.revision).label("revision"),
+                       func.count().label("count")).where(QuotationFile.quotation_id.in_(ids))
+    latest = visible_files(db, revisions).group_by(QuotationFile.quotation_id).subquery()
     files = {file.quotation_id: (file, count) for file, count in db.execute(select(QuotationFile, latest.c.count).options(load_only(QuotationFile.id, QuotationFile.quotation_id, QuotationFile.revision, QuotationFile.name)).join(latest, (QuotationFile.quotation_id == latest.c.quotation_id) & (QuotationFile.revision == latest.c.revision))).all()}
     result = []
     for row in rows:
@@ -235,7 +245,7 @@ def pdf_response(db, quotation_id, version_id=None, download=False):
     find(db, quotation_id)
     query = select(QuotationFile).where(QuotationFile.quotation_id == quotation_id)
     query = query.where(QuotationFile.id == version_id) if version_id else query.order_by(QuotationFile.revision.desc())
-    file = db.scalar(query.limit(1))
+    file = db.scalar(visible_files(db, query).limit(1))
     if file is None:
         raise HTTPException(404, "PDF revision not found")
     return Response(file.content, media_type="application/pdf", headers={

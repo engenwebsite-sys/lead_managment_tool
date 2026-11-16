@@ -13,6 +13,7 @@ class UserCreate(LoginRequest):
     role: Literal["Admin", "Staff"] = "Staff"
     lead_division: Division | None = Field(default=None, alias="leadDivision")
     can_create_leads: bool = Field(default=False, alias="canCreateLeads")
+    lead_access: dict[Division, bool] = Field(default_factory=dict, alias="leadAccess")
 
     @field_validator("name")
     @classmethod
@@ -33,6 +34,7 @@ class UserUpdate(BaseModel):
     is_active: bool | None = Field(default=None, alias="isActive")
     lead_division: Division | None = Field(default=None, alias="leadDivision")
     can_create_leads: bool | None = Field(default=None, alias="canCreateLeads")
+    lead_access: dict[Division, bool] = Field(default_factory=dict, alias="leadAccess")
 
     @model_validator(mode="before")
     @classmethod

@@ -24,7 +24,7 @@ import useNotificationSound from "./hooks/useNotificationSound";
 import Customers from "./pages/Customers";
 import Reports from "./pages/Reports";
 import SettingsProvider from "./components/settings/SettingsProvider";
-import { canAccessQuotations } from "./lib/permissions";
+import { canAccessQuotations, leadAccessFor, viewLeadDivisions } from "./lib/permissions";
 import { useSettings } from "./context/SettingsContext";
 export default function App(props) {
   return <SettingsProvider user={props.user} onProfileUpdated={props.onProfileUpdated} onLogout={props.onLogout}><Workspace {...props} /></SettingsProvider>;
@@ -33,8 +33,10 @@ export default function App(props) {
 function Workspace({ user, onLogout, signingOut }) {
   const canQuotes = canAccessQuotations(user);
   const isAdmin = user.role === "Admin";
-  const leadDivision = isAdmin ? null : user.leadDivision;
-  const canAddLead = isAdmin || Boolean(leadDivision && user.canCreateLeads === true);
+  const leadAccess = leadAccessFor(user);
+  const viewDivisions = viewLeadDivisions(user);
+  const addDivisions = isAdmin ? divisions : viewDivisions.filter((name) => leadAccess[name] === true);
+  const divisionCaption = isAdmin ? "All divisions" : viewDivisions.map(divisionLabel).join(", ") || "No lead division assigned";
   const { settings: preferences } = useSettings();
   const [page, setPage] = useState("Dashboard");
 
@@ -46,7 +48,8 @@ function Workspace({ user, onLogout, signingOut }) {
 
   const [leadSaveError, setLeadSaveError] = useState("");
   const [selectedDivision, setDivision] = useState(preferences.workspace.defaultDivision);
-  const division = isAdmin ? selectedDivision : leadDivision || "All divisions";
+  const division = !isAdmin && viewDivisions.length === 1 ? viewDivisions[0]
+    : viewDivisions.includes(selectedDivision) ? selectedDivision : "All divisions";
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   useEffect(() => {
@@ -128,6 +131,7 @@ function Workspace({ user, onLogout, signingOut }) {
     <div className="min-h-screen bg-[#f4f7f5] font-sans text-slate-900 antialiased selection:bg-lime-200 selection:text-teal-950 [&_button]:cursor-pointer">
       <Sidebar
         page={page}
+        divisionCaption={divisionCaption}
         canViewQuotations={canQuotes}
         alwaysExpanded={preferences.workspace.sidebar === "Always expanded"}
         onNavigate={navigate}
@@ -162,7 +166,7 @@ function Workspace({ user, onLogout, signingOut }) {
               </p>
             </div>
 
-            {hasLeadContent && canAddLead && (
+            {hasLeadContent && addDivisions.length > 0 && (
               <Button onClick={() => setFormOpen(true)}>
                 <Plus size={17} />
                 Add lead
@@ -172,20 +176,20 @@ function Workspace({ user, onLogout, signingOut }) {
 
           {hasLeadContent && (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              {isAdmin ? <label className="flex items-center gap-3 text-xs font-semibold text-slate-800">
+              {isAdmin || viewDivisions.length > 1 ? <label className="flex items-center gap-3 text-xs font-semibold text-slate-800">
                 Division
                 <select
                   value={division}
                   onChange={(event) => setDivision(event.target.value)}
                   className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
                 >
-                  <option>All divisions</option>
-                  {divisions.map((name) => (
+                  <option value="All divisions">{isAdmin ? "All divisions" : "All assigned divisions"}</option>
+                  {viewDivisions.map((name) => (
                     <option key={name} value={name}>{divisionLabel(name)}</option>
                   ))}
                 </select>
               </label> : <span className="text-xs font-semibold text-slate-800">
-                {leadDivision ? divisionLabel(leadDivision) : "No lead division assigned"}
+                {divisionCaption}
               </span>}
 
               <span className="flex items-center gap-2 text-xs font-medium text-slate-700">
@@ -259,9 +263,10 @@ function Workspace({ user, onLogout, signingOut }) {
         </PageTransition>
       </main>
 
-      {formOpen && canAddLead && (
+      {formOpen && addDivisions.length > 0 && (
         <AddLeadModal
-          fixedDivision={leadDivision}
+          allowedDivisions={addDivisions}
+          preferredDivision={division}
           saving={leadSaving}
           saveError={leadSaveError}
           onClose={() => {

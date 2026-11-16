@@ -15,12 +15,12 @@ function NavItem({ name, icon: Icon, active, count, expanded, onClick }) {
   return <button type="button" onClick={onClick} aria-label={name} aria-current={active ? "page" : undefined} title={expanded ? undefined : name}
     className={`group/item relative flex h-11 w-full items-center gap-3 overflow-hidden rounded-xl px-4 text-left text-sm font-semibold transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 motion-reduce:transition-none ${active ? "bg-lime-100 text-teal-950" : "text-slate-700"} hover:bg-teal-900 hover:text-white`}>
     <Icon size={20} className="shrink-0" />
-    <span aria-hidden={!expanded} className={`whitespace-nowrap transition-opacity duration-150 motion-reduce:transition-none ${expanded ? "opacity-100" : "pointer-events-none opacity-0"}`}>{name}</span>
-    {count !== undefined && <span aria-hidden={!expanded} className={`ml-auto rounded-md bg-teal-900/10 px-2 py-0.5 text-[11px] font-bold text-teal-950 group-hover/item:bg-white/15 group-hover/item:text-white ${expanded ? "opacity-100" : "opacity-0"}`}>{count}</span>}
+    <span aria-hidden={!expanded} className={`min-w-0 flex-1 truncate transition-opacity duration-150 motion-reduce:transition-none ${expanded ? "opacity-100" : "pointer-events-none opacity-0"}`}>{name}</span>
+    {count !== undefined && <span aria-hidden={!expanded} className={`shrink-0 rounded-md bg-teal-900/10 px-2 py-0.5 text-[11px] font-bold text-teal-950 group-hover/item:bg-white/15 group-hover/item:text-white ${expanded ? "opacity-100" : "hidden"}`}>{count}</span>}
   </button>;
 }
 
-export default function Sidebar({ page, onNavigate, leadCount, open, onClose, alwaysExpanded = false, canViewQuotations = false }) {
+export default function Sidebar({ page, divisionCaption, onNavigate, leadCount, open, onClose, alwaysExpanded = false, canViewQuotations = false }) {
   const ref = useRef(null);
   const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 1024px)").matches);
   const [hovered, setHovered] = useState(false);
@@ -77,10 +77,14 @@ export default function Sidebar({ page, onNavigate, leadCount, open, onClose, al
         <button type="button" aria-label="Toggle navigation width" aria-expanded={expanded} onClick={() => setTouchExpanded((value) => !value)} className={`absolute left-1 flex size-11 items-center justify-center rounded-xl bg-teal-900 text-lime-200 transition-opacity duration-150 ${expanded ? "pointer-events-none opacity-0" : "opacity-100"}`} tabIndex={expanded ? -1 : 0}><ArrowUpRight size={27} /></button>
         <img src={`${import.meta.env.BASE_URL}Engen%20logo%20Final.png`} alt="ENGEN — Scaling Heights" className={`pointer-events-none ml-3 h-13 w-36 max-w-none object-contain transition-opacity duration-150 ${expanded ? "opacity-100" : "opacity-0"}`} />
         {desktop && touchExpanded && !alwaysExpanded && <button type="button" aria-label="Collapse navigation" onClick={() => { setTouchExpanded(false); setHovered(false); setKeyboardFocus(false); }} className="absolute right-0 flex size-10 items-center justify-center rounded-lg text-slate-700 hover:bg-teal-50 focus-visible:outline-2 focus-visible:outline-teal-700"><X size={20} /></button>}
-        {!desktop && <button type="button" aria-label="Close navigation" onClick={onClose} className="ml-auto rounded-lg p-2 text-slate-700 hover:bg-teal-50"><X size={20} /></button>}
+        {!desktop && <button type="button" aria-label="Close navigation" onClick={onClose} className="ml-auto shrink-0 rounded-lg p-2 text-slate-700 hover:bg-teal-50"><X size={20} /></button>}
       </div>
       <div className="mb-4 flex h-11 shrink-0 items-center gap-3 overflow-hidden rounded-xl bg-teal-50 px-4 text-teal-900">
-        <Layers3 size={20} className="shrink-0" /><div aria-hidden={!expanded} className={`whitespace-nowrap transition-opacity duration-150 ${expanded ? "opacity-100" : "opacity-0"}`}><strong className="block text-xs">ENGEN Workspace</strong><small className="mt-0.5 block text-[10px] text-slate-700">All divisions. One workspace.</small></div>
+        <Layers3 size={20} className="shrink-0" />
+        <div aria-hidden={!expanded} className={`min-w-0 transition-opacity duration-150 ${expanded ? "opacity-100" : "opacity-0"}`}>
+          <strong className="block truncate text-xs">ENGEN Workspace</strong>
+          <small className="mt-0.5 block truncate text-[10px] text-slate-700">{divisionCaption}</small>
+        </div>
       </div>
       <nav className="space-y-1" aria-label="Main navigation">{navigation.filter(({ name }) => name !== "Quotations" || canViewQuotations).map(({ name, icon }) => <NavItem key={name} name={name} icon={icon} active={page === name} expanded={expanded} count={name === "Leads" ? leadCount : undefined} onClick={() => navigate(name)} />)}</nav>
       <div className="mt-auto pt-5"><NavItem name="Settings" icon={Settings} active={page === "Settings"} expanded={expanded} onClick={() => navigate("Settings")} />

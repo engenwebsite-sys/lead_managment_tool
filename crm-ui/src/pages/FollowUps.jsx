@@ -4,7 +4,9 @@ import { getFollowUpsPage, createFollowUp, updateFollowUp } from "../services/fo
 import Pagination from "../components/Pagination";
 import { useState } from "react";
 import { CalendarClock, Plus, Search, Check, History, RefreshCw, Clock3, CheckCheck, AlertCircle } from "lucide-react";
-import { divisionLabel, divisions } from "../data/crm";
+import { divisionLabel } from "../data/crm";
+import { useSettings } from "../context/SettingsContext";
+import { viewLeadDivisions } from "../lib/permissions";
 import { Avatar, Button, Card, CardHeading, EmptyState, IconButton } from "../components/ui";
 import Modal from "../components/Modal";
 import FollowUpEditor from "../components/followups/FollowUpEditor";
@@ -19,6 +21,8 @@ const summaryItems = [
 ];
 
 export default function FollowUps({ now, onChanged }) {
+  const { user } = useSettings();
+  const divisions = viewLeadDivisions(user);
   const [tab, setTab] = useState("All");
   const [search, setSearch] = useState("");
   const [division, setDivision] = useState("All divisions");
@@ -42,7 +46,7 @@ export default function FollowUps({ now, onChanged }) {
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-4">
       <p className="max-w-xl text-xs leading-6 text-slate-700">Plan the next conversation. Track who introduced the customer.<br />All times are IST · Records are saved to the database.</p>
-      <Button disabled={loading || Boolean(storageError)} onClick={() => setEditor({ mode: "schedule" })}><Plus size={17} />Schedule follow-up</Button>
+      <Button disabled={!divisions.length || loading || Boolean(storageError)} onClick={() => setEditor({ mode: "schedule" })}><Plus size={17} />Schedule follow-up</Button>
     </div>
 
     <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -69,7 +73,7 @@ export default function FollowUps({ now, onChanged }) {
         <label className="flex min-w-0 basis-full sm:basis-44 flex-1 items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-slate-700 focus-within:ring-2 focus-within:ring-teal-100">
           <Search size={16} /><input aria-label="Search follow-ups" placeholder="Customer, purpose or reference..." value={search} onChange={(event) => setSearch(event.target.value)} className="w-full bg-transparent text-xs outline-none placeholder:text-slate-500" />
         </label>
-        <select aria-label="Filter follow-ups by division" value={division} onChange={(event) => setDivision(event.target.value)} className={selectClass}><option>All divisions</option>{divisions.map((name) => <option key={name} value={name}>{divisionLabel(name)}</option>)}</select>
+        <select aria-label="Filter follow-ups by division" value={division} disabled={!divisions.length} onChange={(event) => setDivision(event.target.value)} className={selectClass}><option value="All divisions">{user.role === "Admin" ? "All divisions" : divisions.length ? "All assigned divisions" : "No divisions assigned"}</option>{divisions.map((name) => <option key={name} value={name}>{divisionLabel(name)}</option>)}</select>
         <input aria-label="Filter follow-ups by staff" placeholder="Exact staff name" value={staff === "All staff" ? "" : staff} onChange={(event) => setStaff(event.target.value || "All staff")} maxLength={120} className={selectClass} />
         <input aria-label="Filter follow-ups by date" type="date" value={date} onChange={(event) => setDate(event.target.value)} className={selectClass} />
         {(search || date || staff !== "All staff" || division !== "All divisions" || tab !== "All") && <Button variant="secondary" onClick={() => { setSearch(""); setDate(""); setStaff("All staff"); setDivision("All divisions"); setTab("All"); }}>Clear filters</Button>}

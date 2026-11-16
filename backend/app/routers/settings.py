@@ -8,7 +8,7 @@ from app.db.operations import database_operation
 from app.models.settings import UserPreferences, WorkspaceSettings
 from app.models.user import User, UserAuditEvent
 from app.schemas.settings import PersonalData, SettingsUpdate, SharedData
-from app.services.settings import personal_settings, settings_response, shared_settings
+from app.services.settings import personal_settings, settings_response, shared_settings, visible_divisions
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
@@ -21,15 +21,18 @@ def get_settings(response: Response, actor: User = Depends(get_current_user), db
 
 
 @router.get("/divisions")
-def get_divisions(actor: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_divisions(response: Response, actor: User = Depends(get_current_user), db: Session = Depends(get_db)):
     with database_operation(db):
         shared, _ = shared_settings(db)
-        return [value.model_dump() for value in shared.divisions.values()]
+        response.headers["Cache-Control"] = "no-store"
+        return [value.model_dump() for value in visible_divisions(shared.divisions, actor).values()]
 
 
 @router.put("")
 def update_settings(data: SettingsUpdate, response: Response, actor: User = Depends(get_current_user), db: Session = Depends(get_db)):
     with database_operation(db):
+        if data.workspace and actor.role == "Staff" and data.workspace.defaultDivision != "All divisions" and data.workspace.defaultDivision not in actor.lead_access:
+            raise HTTPException(422, "Choose one of your assigned divisions as the default")
         shared_fields = [key for key in ["company", "divisions", "leads", "quotation"] if getattr(data, key) is not None]
         if shared_fields and not actor.is_owner:
             raise HTTPException(403, "Only the Owner can change company and business settings")

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mockCrm } from "./fixtures.js";
+import { mockCrm, staff } from "./fixtures.js";
 
 async function navigate(page, name) {
   const opener = page.getByRole("button", { name: "Open navigation", exact: true });
@@ -16,6 +16,89 @@ async function settingsTab(page, name) {
   if (page.viewportSize().width < 1024) await page.getByRole("combobox", { name: "Settings section", exact: true }).selectOption({ label: name });
   else await page.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name, exact: true }).click();
 }
+
+test("staff sidebar shows the assigned lead division on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await mockCrm(page, {}, { ...staff, leadDivision: "ClearCode Labs" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  const sidebar = page.getByRole("dialog", { name: "Workspace navigation" });
+  await expect(sidebar.getByText("ClearCode Labs", { exact: true })).toBeVisible();
+  await expect(sidebar.getByText(/All divisions/)).toHaveCount(0);
+  await expect(sidebar.getByRole("button", { name: "Close navigation", exact: true })).toBeInViewport({ ratio: 1 });
+  await noHorizontalOverflow(page);
+});
+
+test("staff can filter three divisions but can add leads only where permitted", async ({ page }) => {
+  await mockCrm(page, {}, { ...staff, leadAccess: { ENGEN: true, nemilink: false, "ClearCode Labs": false } });
+  await page.goto("/");
+  const filter = page.getByRole("combobox", { name: "Division", exact: true });
+  await expect(filter.getByRole("option")).toHaveText(["All assigned divisions", "Nemilink", "ClearCode Labs", "ENGEN"]);
+  await filter.selectOption("nemilink");
+  await page.getByRole("button", { name: "Add lead", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "Add a lead" });
+  await expect(form.getByText("ENGEN", { exact: true })).toBeVisible();
+  await expect(form.getByRole("option", { name: "Nemilink", exact: true })).toHaveCount(0);
+});
+
+test("staff reports and settings list only assigned divisions", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await mockCrm(page, {}, { ...staff, leadAccess: { ENGEN: true, nemilink: false } });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeVisible();
+  await navigate(page, "Reports");
+  await expect(page.getByRole("combobox", { name: "Division", exact: true }).getByRole("option"))
+    .toHaveText(["All assigned divisions", "Nemilink", "ENGEN"]);
+  await navigate(page, "Settings");
+  await settingsTab(page, "Company & divisions");
+  await expect(page.getByRole("combobox", { name: "Select division", exact: true }).getByRole("option"))
+    .toHaveText(["Nemilink", "ENGEN"]);
+});
+
+test("customer, quotation and follow-up controls show only staff divisions", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await mockCrm(page, {}, { ...staff, canAccessQuotations: true, leadAccess: { ENGEN: true, nemilink: false } });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeVisible();
+  const options = ["All assigned divisions", "Nemilink", "ENGEN"];
+  await navigate(page, "Customers");
+  await expect(page.getByRole("combobox", { name: "Filter customers by division" }).getByRole("option")).toHaveText(options);
+  await page.getByRole("button", { name: "Add customer", exact: true }).click();
+  const customer = page.getByRole("dialog", { name: "Add customer" });
+  await expect(customer.getByRole("group", { name: "Associated divisions *" }).getByRole("checkbox")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+
+  await navigate(page, "Quotations");
+  await expect(page.getByRole("combobox", { name: "Filter by division", exact: true }).getByRole("option")).toHaveText(options);
+  await page.getByRole("button", { name: "Create quotation", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Create quotation" }).getByRole("combobox", { name: "Division", exact: true })
+    .getByRole("option")).toHaveText(["Nemilink", "ENGEN"]);
+  await page.keyboard.press("Escape");
+
+  await navigate(page, "Follow-ups");
+  await expect(page.getByRole("combobox", { name: "Filter follow-ups by division" }).getByRole("option")).toHaveText(options);
+});
+
+test("clearing division view access also clears and disables add access", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await mockCrm(page);
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeVisible();
+  await navigate(page, "Settings");
+  await settingsTab(page, "Users & access");
+  await page.getByRole("button", { name: "Add login account", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Create login account" });
+  const view = dialog.getByRole("checkbox", { name: "View leads in ENGEN" });
+  const add = dialog.getByRole("checkbox", { name: "Add leads in ENGEN" });
+  await expect(add).toBeDisabled();
+  await view.check();
+  await add.check();
+  await dialog.getByRole("checkbox", { name: "View leads in Nemilink" }).check();
+  await view.uncheck();
+  await expect(add).not.toBeChecked();
+  await expect(add).toBeDisabled();
+  await expect(dialog.getByRole("checkbox", { name: "View leads in Nemilink" })).toBeChecked();
+});
 
 for (const viewport of [{ width: 320, height: 740 }, { width: 375, height: 812 }, { width: 768, height: 1024 }, { width: 1024, height: 768 }, { width: 1440, height: 1000 }]) {
   test(`Settings and main registers fit ${viewport.width}px`, async ({ page }, testInfo) => {
