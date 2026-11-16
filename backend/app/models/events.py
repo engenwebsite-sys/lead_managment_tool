@@ -62,7 +62,6 @@ class Event(Base):
     start_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        index=True,
     )
 
     end_at: Mapped[datetime] = mapped_column(
@@ -78,7 +77,6 @@ class Event(Base):
     status: Mapped[str] = mapped_column(
         String(20),
         default="Planned",
-        index=True,
     )
 
     # Reminder offsets in minutes.

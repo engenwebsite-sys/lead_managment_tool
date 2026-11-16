@@ -26,7 +26,8 @@ class SettingsScenarios(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self.db = Session(self.engine)
         self.owner = User(name="Owner", email="owner@example.test", password_hash=test_password_hash(), role="Admin", is_owner=True, admin_slot=1)
-        self.staff = User(name="Staff", email="staff@example.test", password_hash=test_password_hash(), role="Staff", quotation_access=True)
+        self.staff = User(name="Staff", email="staff@example.test", password_hash=test_password_hash(), role="Staff",
+                          quotation_access=True, lead_division="MMC", can_create_leads=True)
         self.db.add(RolePermissions(role="Staff", quotations=True))
         self.db.add_all([self.owner, self.staff])
         self.db.commit()
@@ -142,8 +143,8 @@ class SettingsScenarios(unittest.TestCase):
         self.assertEqual(lead.status_code, 201, lead.text)
         self.assertEqual((lead.json()["priority"], lead.json()["status"], lead.json()["description"]), ("High", "Follow-up", ""))
         self.save({"expectedSharedVersion": saved["versions"]["shared"], "leads": {**saved["leads"], "requireDescription": True}})
-        self.assertEqual(self.client.put(f"/api/leads/{lead.json()['id']}", headers=self.staff_headers, json={"priority": "Low", "expectedVersion": 1}).status_code, 200)
-        self.assertEqual(self.client.put(f"/api/leads/{lead.json()['id']}", headers=self.staff_headers, json={"description": "", "expectedVersion": 2}).status_code, 422)
+        self.assertEqual(self.client.put(f"/api/leads/{lead.json()['id']}", headers=self.owner_headers, json={"priority": "Low", "expectedVersion": 1}).status_code, 200)
+        self.assertEqual(self.client.put(f"/api/leads/{lead.json()['id']}", headers=self.owner_headers, json={"description": "", "expectedVersion": 2}).status_code, 422)
 
     def test_05_quote_defaults_numbering_pdf_snapshot_and_owner_approval(self):
         initial = self.settings()

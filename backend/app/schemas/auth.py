@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.schemas.common import ApiModel
+from app.schemas.common import ApiModel, Division
 
 
 class LoginRequest(BaseModel):
@@ -50,6 +50,8 @@ class VerifyRecoveryOtpRequest(BaseModel):
 
 
 class UserResponse(ApiModel):
+    lead_division: Division | None = Field(default=None, alias="leadDivision")
+    can_create_leads: bool = Field(default=False, alias="canCreateLeads")
     can_access_quotations: bool = Field(alias="canAccessQuotations")
     id: str
     email: str

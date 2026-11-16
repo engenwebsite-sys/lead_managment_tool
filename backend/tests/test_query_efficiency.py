@@ -42,7 +42,7 @@ class QueryEfficiencyTests(unittest.TestCase):
         start = datetime(2026, 11, 5, 18, 30, tzinfo=timezone.utc)
         end = start + timedelta(days=1)
         own = Lead(customer="Visible", division="MMC", description="Firmware", priority="High", assignee_user_id=self.accounts[2].id)
-        hidden = Lead(customer="Hidden", division="MMC", description="Firmware", assignee_user_id=self.accounts[3].id)
+        hidden = Lead(customer="Hidden", division="ENGEN", description="Firmware", assignee_user_id=self.accounts[3].id)
         self.db.add_all([own, hidden]); self.db.flush()
         for due, status in [(start - timedelta(seconds=1), "Pending"), (start, "Pending"), (end - timedelta(seconds=1), "Pending"), (end, "Pending"), (at, "Completed")]:
             self.db.add(FollowUp(lead_id=own.id, purpose="Boundary", due_at=due, status=status))

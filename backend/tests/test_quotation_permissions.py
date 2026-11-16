@@ -119,15 +119,19 @@ class QuotationPermissionTests(unittest.TestCase):
             command.upgrade(config, "20261106_0012")
             metadata = MetaData(); metadata.reflect(connection)
             for model in [User, AuthSession]:
-                for row in self.db.execute(select(model.__table__)).mappings():
-                    connection.execute(metadata.tables[model.__tablename__].insert().values(**dict(row)))
+                historical = metadata.tables[model.__tablename__]
+                for row in self.db.execute(select(*(model.__table__.c[key] for key in historical.c.keys()))).mappings():
+                    connection.execute(historical.insert().values(**dict(row)))
             before = connection.execute(select(metadata.tables["users"]).order_by(metadata.tables["users"].c.id)).all()
             sessions = connection.execute(select(metadata.tables["auth_sessions"])).mappings().all()
             command.upgrade(config, "head")
             current = MetaData(); current.reflect(connection)
             policy = connection.execute(select(current.tables["role_permissions"])).mappings().one()
             self.assertEqual((policy["role"], policy["quotations"], policy["version"]), ("Staff", False, 1))
-            self.assertEqual(before, connection.execute(select(current.tables["users"]).order_by(current.tables["users"].c.id)).all())
+            users = current.tables["users"]
+            self.assertEqual(before, connection.execute(select(*(users.c[key] for key in metadata.tables["users"].c.keys())).order_by(users.c.id)).all())
+            self.assertEqual({(row.lead_division, row.can_create_leads) for row in connection.execute(
+                select(users.c.lead_division, users.c.can_create_leads))}, {(None, False)})
             after_sessions = {row["id"]: row for row in connection.execute(select(current.tables["auth_sessions"])).mappings()}
             staff_ids = {account.id for account in self.accounts[2:]}
             for before_session in sessions:

@@ -31,6 +31,8 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(512))
     role: Mapped[str] = mapped_column(String(20), default="Staff")
     quotation_access: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    lead_division: Mapped[str | None] = mapped_column(String(40))
+    can_create_leads: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
     admin_slot: Mapped[int | None] = mapped_column(Integer, nullable=True, default=default_admin_slot)

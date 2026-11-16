@@ -19,9 +19,9 @@ class PaginationVersionTests(unittest.TestCase):
     def test_pages_are_bounded_stable_scoped_and_search_escapes_wildcards(self):
         at = datetime(2026, 11, 5, tzinfo=timezone.utc)
         for number in range(125):
-            self.db.add(Lead(id=f"lead-{number:03}", customer=f"Customer {number:03}", division="MMC", description="Firmware", created_at=at,
+            self.db.add(Lead(id=f"lead-{number:03}", customer=f"Customer {number:03}", division="MMC" if number < 70 else "ENGEN", description="Firmware", created_at=at,
                              assignee_user_id=self.accounts[2 if number < 70 else 3].id))
-        self.db.add(Lead(customer="Literal 10%_done", division="nemilink", description="IoT", assignee_user_id=self.accounts[2].id))
+        self.db.add(Lead(customer="Literal 10%_done", division="MMC", description="IoT", assignee_user_id=self.accounts[2].id))
         self.db.commit()
         first = self.client.get("/api/leads?paged=true&pageSize=25", headers=self.headers[2]).json()
         second = self.client.get("/api/leads?paged=true&pageSize=25&page=2", headers=self.headers[2]).json()
@@ -82,7 +82,7 @@ class PaginationVersionTests(unittest.TestCase):
         self.assertEqual(self.client.delete(path).status_code, 428)
         current = changed.json()
         self.assertEqual(self.assign("leads", current).status_code, 200)
-        self.assertEqual(self.client.put(path, headers=self.headers[2], json={"priority": "Low", "expectedVersion": 2}).status_code, 409)
+        self.assertEqual(self.client.put(path, headers=self.headers[1], json={"priority": "Low", "expectedVersion": 2}).status_code, 409)
         latest = self.client.get(path).json()
         self.assertEqual(latest["version"], 3)
         self.assertEqual(latest["status"], "New")

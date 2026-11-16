@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.services.crm_access import get_crm_db, scoped, require_record, require_admin, creation_assignment
+from app.services.crm_access import get_crm_db, scoped, require_admin, require_lead_creation, creation_assignment
 from app.db.operations import database_operation
 from app.models.lead import Lead
 from app.models.follow_up import FollowUp
@@ -20,16 +20,20 @@ from app.services.settings import enforce_lead_requirements, shared_settings
 router = APIRouter(prefix="/api/leads", tags=["Leads"])
 
 
-def find_lead(db, lead_id):
-    lead = db.scalar(select(Lead).where(Lead.id == lead_id).with_for_update().execution_options(populate_existing=True))
+def find_lead(db, lead_id, *, lock=False):
+    query = scoped(db, select(Lead).where(Lead.id == lead_id), Lead)
+    if lock:
+        query = query.with_for_update()
+    lead = db.scalar(query.execution_options(populate_existing=True))
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
-    return require_record(db, lead)
+    return lead
 
 
 @router.post("", response_model=LeadResponse, status_code=status.HTTP_201_CREATED)
 def create_lead(data: LeadCreate, db: Session = Depends(get_crm_db)):
     with database_operation(db):
+        require_lead_creation(db, data.division)
         settings, _ = shared_settings(db)
         payload = data.model_dump(by_alias=False)
         if "status" not in data.model_fields_set:
@@ -60,7 +64,8 @@ def get_lead(lead_id: str, db: Session = Depends(get_crm_db)):
 @router.put("/{lead_id}", response_model=LeadResponse)
 def update_lead(lead_id: str, data: LeadUpdate, db: Session = Depends(get_crm_db)):
     with database_operation(db):
-        lead = find_lead(db, lead_id)
+        lead = find_lead(db, lead_id, lock=True)
+        require_admin(db, "Only administrators can edit leads")
         expected_version(db, lead, data.expected_version)
         updates = data.model_dump(exclude_unset=True, by_alias=False, exclude={"expected_version"})
         candidate = {field: getattr(lead, field) for field in LeadCreate.model_fields}
@@ -84,7 +89,7 @@ def update_lead(lead_id: str, data: LeadUpdate, db: Session = Depends(get_crm_db
 def delete_lead(lead_id: str, db: Session = Depends(get_crm_db), expectedVersion: Annotated[int | None, Query(ge=1)] = None):
     with database_operation(db):
         require_admin(db)
-        lead = find_lead(db, lead_id)
+        lead = find_lead(db, lead_id, lock=True)
         expected_version(db, lead, expectedVersion)
         if db.scalar(select(FollowUp.id).where(FollowUp.lead_id == lead_id).limit(1)) is not None:
             raise HTTPException(status_code=409, detail="This lead has follow-up history and cannot be deleted")

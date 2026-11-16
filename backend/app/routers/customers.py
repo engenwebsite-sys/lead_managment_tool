@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select, or_, and_, case
 from sqlalchemy.orm import Session
 
-from app.services.crm_access import get_crm_db, scoped, require_record, require_admin, creation_assignment, enforce_follow_assignment, actor
+from app.services.crm_access import get_crm_db, scoped, require_record, require_admin, creation_assignment, enforce_follow_assignment, actor, require_record_division
 from app.db.operations import database_operation
 from app.models.customer import Customer
 from app.models.lead import Lead
@@ -35,6 +35,7 @@ def profile_responses(rows, db):
 @router.post("", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
 def create_customer(data: CustomerCreate, db: Session = Depends(get_crm_db)):
     with database_operation(db):
+        require_record_division(db, data.divisions)
         payload = data.model_dump(by_alias=False)
         if actor(db) is not None:
             payload["assigned_to"] = actor(db).name
@@ -70,6 +71,7 @@ def update_customer(customer_id: str, data: CustomerUpdate, db: Session = Depend
             validated = CustomerCreate.model_validate(candidate).model_dump(by_alias=False)
         except ValidationError as error:
             raise HTTPException(status_code=422, detail=error_details(error)) from None
+        require_record_division(db, validated["divisions"])
         claim_version(db, Customer, customer, data.expected_version)
         for field in updates:
             setattr(customer, field, validated[field])

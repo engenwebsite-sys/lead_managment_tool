@@ -4,12 +4,15 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.auth import LoginRequest, UserResponse
+from app.schemas.common import Division
 
 
 class UserCreate(LoginRequest):
     name: str = Field(min_length=1, max_length=120)
     password: str = Field(min_length=8, max_length=128)
     role: Literal["Admin", "Staff"] = "Staff"
+    lead_division: Division | None = Field(default=None, alias="leadDivision")
+    can_create_leads: bool = Field(default=False, alias="canCreateLeads")
 
     @field_validator("name")
     @classmethod
@@ -28,12 +31,14 @@ class UserUpdate(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=128)
     role: Literal["Admin", "Staff"] | None = None
     is_active: bool | None = Field(default=None, alias="isActive")
+    lead_division: Division | None = Field(default=None, alias="leadDivision")
+    can_create_leads: bool | None = Field(default=None, alias="canCreateLeads")
 
     @model_validator(mode="before")
     @classmethod
     def require_changes(cls, value):
         if isinstance(value, dict):
-            if any(item is None for item in value.values()):
+            if any(item is None and key not in {"leadDivision", "lead_division"} for key, item in value.items()):
                 raise ValueError("Omit unchanged fields rather than sending null")
             if not set(value) - {"expectedVersion", "expected_version"}:
                 raise ValueError("Provide at least one field to update")

@@ -24,7 +24,8 @@ class CrmAccessTests(unittest.TestCase):
         # Row-scope tests explicitly grant the module; default-deny is covered separately.
         self.accounts = [User(email=f"access{number}@example.test", name="Same Name" if number > 1 else f"Admin {number}",
                               role="Admin" if number < 2 else "Staff", quotation_access=number > 1, is_owner=number == 0,
-                              admin_slot=number + 1 if number < 2 else None, password_hash=test_password_hash()) for number in range(4)]
+                              admin_slot=number + 1 if number < 2 else None, password_hash=test_password_hash(),
+                              lead_division={2: "MMC", 3: "ENGEN"}.get(number), can_create_leads=(number == 2)) for number in range(4)]
         self.db.add(RolePermissions(role="Staff", quotations=True))
         self.db.add_all(self.accounts)
         self.db.commit()
@@ -66,13 +67,13 @@ class CrmAccessTests(unittest.TestCase):
 
     def test_staff_lists_details_updates_and_assignment_forgery(self):
         lead = self.lead()
-        self.assertEqual(self.client.get("/api/leads", headers=self.headers[2]).json(), [])
+        self.assertEqual([x["id"] for x in self.client.get("/api/leads", headers=self.headers[2]).json()], [lead["id"]])
         self.assertEqual(self.assign("leads", lead).status_code, 200)
         self.assertEqual([x["id"] for x in self.client.get("/api/leads", headers=self.headers[2]).json()], [lead["id"]])
         for method, payload in [("get", None), ("put", {"priority": "High"})]:
             kwargs = {"json": payload} if payload else {}
             self.assertEqual(getattr(self.client, method)(f"/api/leads/{lead['id']}", headers=self.headers[3], **kwargs).status_code, 404)
-        self.assertEqual(self.client.put(f"/api/leads/{lead['id']}", headers=self.headers[2], json={"priority": "High", "expectedVersion": 2}).status_code, 200)
+        self.assertEqual(self.client.put(f"/api/leads/{lead['id']}", headers=self.headers[2], json={"priority": "High", "expectedVersion": 2}).status_code, 403)
         self.assertEqual(self.client.put(f"/api/leads/{lead['id']}", headers=self.headers[2], json={"assigneeUserId": self.accounts[3].id}).status_code, 422)
         self.assertEqual(self.assign("leads", lead, headers=self.headers[2]).status_code, 403)
         self.assertNotIn("crm_actor", self.db.info)
@@ -88,6 +89,37 @@ class CrmAccessTests(unittest.TestCase):
         self.assertEqual(customer["assignedTo"], self.accounts[2].name)
         self.assertEqual(self.client.get("/api/access/assignments").status_code, 403)
 
+    def test_admin_grants_creation_only_in_the_staff_division(self):
+        payload = {"customer": "New prospect", "division": "ENGEN", "description": "Firmware"}
+        account = self.client.post("/api/users", json={"name": "Chan", "email": "chan@example.test",
+                                   "password": TEST_PASSWORD, "leadDivision": "ENGEN"})
+        self.assertEqual(account.status_code, 201, account.text)
+        self.assertFalse(account.json()["canCreateLeads"])
+        path = "/api/users/" + account.json()["id"]
+
+        def sign_in():
+            result = self.client.post("/api/auth/login", json={"email": "chan@example.test", "password": TEST_PASSWORD})
+            self.assertEqual(result.json()["user"]["leadDivision"], "ENGEN")
+            return {"Authorization": "Bearer " + result.json()["accessToken"]}
+
+        staff = sign_in()
+        other = self.lead()
+        visible = self.client.post("/api/leads", json=payload)
+        self.assertEqual(visible.status_code, 201, visible.text)
+        self.assertEqual([row["id"] for row in self.client.get("/api/leads", headers=staff).json()], [visible.json()["id"]])
+        self.assertEqual(self.client.get("/api/leads?division=MMC", headers=staff).json(), [])
+        self.assertEqual(self.client.get("/api/leads/" + other["id"], headers=staff).status_code, 404)
+        self.assertEqual(self.client.get("/api/workspace/overview", headers=staff).json()["metrics"]["leads"]["total"], 1)
+        self.assertEqual(len(self.client.get("/api/reports/leads", headers=staff).json()["rows"]), 1)
+        self.assertEqual(self.client.post("/api/leads", headers=staff, json=payload).status_code, 403)
+        self.assertEqual(self.client.put(path, headers=staff, json={"expectedVersion": 1, "canCreateLeads": True}).status_code, 403)
+        grant = self.client.put(path, json={"expectedVersion": 1, "canCreateLeads": True})
+        self.assertEqual(grant.status_code, 200, grant.text)
+        self.assertEqual(self.client.get("/api/leads", headers=staff).status_code, 401)
+        staff = sign_in()
+        self.assertEqual(self.client.post("/api/leads", headers=staff, json={**payload, "division": "MMC"}).status_code, 403)
+        self.assertEqual(self.client.post("/api/leads", headers=staff, json=payload).status_code, 201)
+
     def test_followups_inherit_lead_access_and_reassignment(self):
         lead = self.lead()
         self.assign("leads", lead)
@@ -102,7 +134,7 @@ class CrmAccessTests(unittest.TestCase):
         current = {**lead, "assigneeUserId": self.accounts[2].id, "version": 2}
         self.assertEqual(self.assign("leads", current, 3).status_code, 200)
         self.assertEqual(self.client.get(f"/api/follow-ups/{task['id']}", headers=self.headers[2]).status_code, 404)
-        self.assertEqual(self.client.get(f"/api/follow-ups/{task['id']}", headers=self.headers[3]).status_code, 200)
+        self.assertEqual(self.client.get(f"/api/follow-ups/{task['id']}", headers=self.headers[3]).status_code, 404)
         self.assertEqual(self.client.post("/api/follow-ups", headers=self.headers[2], json={"leadId": lead["id"], "purpose": "Call", "dueAt": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()}).status_code, 404)
 
     def test_quote_pdf_versions_and_customer_profiles_do_not_leak_by_name(self):
@@ -139,7 +171,7 @@ class CrmAccessTests(unittest.TestCase):
         self.db.commit()
         self.assertEqual(self.assign("leads", current, 3).status_code, 422)
         self.assertEqual(self.assign("leads", current, None).status_code, 200)
-        self.assertEqual(self.client.get("/api/leads", headers=self.headers[2]).json(), [])
+        self.assertEqual([row["id"] for row in self.client.get("/api/leads", headers=self.headers[2]).json()], [lead["id"]])
         self.assertEqual(len(self.client.get("/api/leads", headers=self.headers[1]).json()), 1)
         self.assertEqual(self.client.get("/api/access/assignments?limit=101").status_code, 422)
         directory = self.client.get("/api/access/assignments").json()

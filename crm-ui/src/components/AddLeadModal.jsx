@@ -12,7 +12,7 @@ const fieldClass =
 const labelClass =
     "flex min-w-0 flex-col gap-2 text-xs font-semibold text-slate-800";
 
-export default function AddLeadModal({ onClose, onSave, saveError = "", saving = false }) {
+export default function AddLeadModal({ onClose, onSave, saveError = "", saving = false, fixedDivision }) {
     const preferences = runtimeSettings();
     const dialogRef = useRef(null);
     const [customerLink, setCustomerLink] = useState({ customer: "", customerId: null });
@@ -53,7 +53,7 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
             customerId: customerLink.customerId,
             description,
             contact: String(data.get("contact")).trim(),
-            division: String(data.get("division")),
+            division: fixedDivision || String(data.get("division")),
             priority: String(data.get("priority")),
             status: preferences.leads.defaultStatus,
             leadSource,
@@ -124,7 +124,7 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
 
                         <label className={labelClass}>
                             Division *
-                            <select
+                            {fixedDivision ? <span className={fieldClass}>{divisionLabel(fixedDivision)}</span> : <select
                                 name="division"
                                 defaultValue={preferences.workspace.defaultDivision === "All divisions" ? "nemilink" : preferences.workspace.defaultDivision}
                                 className={fieldClass}
@@ -132,7 +132,7 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
                                 {divisions.map((division) => (
                                     <option key={division} value={division}>{divisionLabel(division)}</option>
                                 ))}
-                            </select>
+                            </select>}
                         </label>
 
                         <label className={labelClass}>

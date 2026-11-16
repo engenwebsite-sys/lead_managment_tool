@@ -32,6 +32,9 @@ export default function App(props) {
 
 function Workspace({ user, onLogout, signingOut }) {
   const canQuotes = canAccessQuotations(user);
+  const isAdmin = user.role === "Admin";
+  const leadDivision = isAdmin ? null : user.leadDivision;
+  const canAddLead = isAdmin || Boolean(leadDivision && user.canCreateLeads === true);
   const { settings: preferences } = useSettings();
   const [page, setPage] = useState("Dashboard");
 
@@ -42,7 +45,8 @@ function Workspace({ user, onLogout, signingOut }) {
   const changed = () => setRevision((value) => value + 1);
 
   const [leadSaveError, setLeadSaveError] = useState("");
-  const [division, setDivision] = useState(preferences.workspace.defaultDivision);
+  const [selectedDivision, setDivision] = useState(preferences.workspace.defaultDivision);
+  const division = isAdmin ? selectedDivision : leadDivision || "All divisions";
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   useEffect(() => {
@@ -158,7 +162,7 @@ function Workspace({ user, onLogout, signingOut }) {
               </p>
             </div>
 
-            {hasLeadContent && (
+            {hasLeadContent && canAddLead && (
               <Button onClick={() => setFormOpen(true)}>
                 <Plus size={17} />
                 Add lead
@@ -168,7 +172,7 @@ function Workspace({ user, onLogout, signingOut }) {
 
           {hasLeadContent && (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <label className="flex items-center gap-3 text-xs font-semibold text-slate-800">
+              {isAdmin ? <label className="flex items-center gap-3 text-xs font-semibold text-slate-800">
                 Division
                 <select
                   value={division}
@@ -180,7 +184,9 @@ function Workspace({ user, onLogout, signingOut }) {
                     <option key={name} value={name}>{divisionLabel(name)}</option>
                   ))}
                 </select>
-              </label>
+              </label> : <span className="text-xs font-semibold text-slate-800">
+                {leadDivision ? divisionLabel(leadDivision) : "No lead division assigned"}
+              </span>}
 
               <span className="flex items-center gap-2 text-xs font-medium text-slate-700">
                 <CalendarDays size={15} />
@@ -214,8 +220,8 @@ function Workspace({ user, onLogout, signingOut }) {
               onViewFollowUps={() => navigate("Follow-ups")}
             />
           ) : <Card className="p-5"><p role={overview.error ? "alert" : "status"} className="text-sm text-slate-800">{overview.error || "Loading workspace summary..."}</p></Card>) : page === "Leads" ? (
-            <LeadRegister division={division} revision={revision} onUpdateLead={handleUpdateLead}
-              onDeleteLead={user.role === "Admin" ? handleDeleteLead : undefined} />
+            <LeadRegister division={division} revision={revision} onUpdateLead={isAdmin ? handleUpdateLead : undefined}
+              onDeleteLead={isAdmin ? handleDeleteLead : undefined} />
           ) : page === "Customers" ? (
             <Customers onChanged={changed} />
           ) : page === "Settings" ? (
@@ -248,13 +254,14 @@ function Workspace({ user, onLogout, signingOut }) {
 
           <footer className="mt-5 flex flex-wrap justify-between gap-2 text-[11px] font-medium text-slate-600">
             <span>ENGEN · Scaling Heights</span>
-            <span>{divisions.join(" / ")}</span>
+            {isAdmin && <span>{divisions.join(" / ")}</span>}
           </footer>
         </PageTransition>
       </main>
 
-      {formOpen && (
+      {formOpen && canAddLead && (
         <AddLeadModal
+          fixedDivision={leadDivision}
           saving={leadSaving}
           saveError={leadSaveError}
           onClose={() => {

@@ -14,7 +14,7 @@ from pypdf import PdfReader
 from sqlalchemy import select, update, func
 from sqlalchemy.orm import Session, load_only
 
-from app.services.crm_access import get_crm_db, scoped, require_admin, creation_assignment
+from app.services.crm_access import get_crm_db, scoped, require_admin, creation_assignment, require_record_division
 from app.db.operations import database_operation
 from app.models.quotation import Quotation, QuotationFile
 from app.schemas.common import error_details
@@ -93,6 +93,7 @@ def add_file(db, item, content, name):
 
 
 def save_new(db, data, document, content, source, filename):
+    require_record_division(db, [data.division])
     validate_link(db, data.customer_id, data.customer)
     item = Quotation(customer_id=data.customer_id, id=str(uuid.uuid4()), number=data.number, number_key=data.number.casefold(),
                      division=data.division, customer=data.customer, status=data.status,
@@ -181,6 +182,7 @@ def update_quotation(quotation_id: str, data: QuotationUpdate, db: Session = Dep
             if "customer_id" not in details_input.model_fields_set:
                 details_input = details_input.model_copy(update={"customer_id": item.customer_id})
             details, settings = quote_defaults(db, details_input, existing_number=item.number)
+            require_record_division(db, [details.division])
             validate_link(db, details.customer_id, details.customer, item)
             document = quote_presentation(snapshot(details), settings)
             content = generate_pdf(document)
@@ -212,6 +214,7 @@ async def upload_revision(quotation_id: str, expected_version: int = Form(alias=
             if "customer_id" not in data.model_fields_set:
                 data = data.model_copy(update={"customer_id": item.customer_id})
             data, _ = quote_defaults(db, data, uploaded=True)
+            require_record_division(db, [data.division])
             validate_link(db, data.customer_id, data.customer, item)
             document = snapshot(data, uploaded=True)
         # Revised imported amounts/dates may be supplied explicitly with the replacement PDF.
