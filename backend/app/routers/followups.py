@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.services.crm_access import get_crm_db, scoped, require_record, require_admin, enforce_follow_assignment
+from app.services.crm_access import actor, get_crm_db, scoped, require_record, enforce_follow_assignment
 from app.services.crm_access import follow_assignee_name
 from app.db.operations import database_operation
 from app.models.follow_up import FollowUp
@@ -122,8 +122,6 @@ def update_follow_up(follow_up_id: str, data: FollowUpUpdate, db: Session = Depe
         claim_version(db, FollowUp, item, data.expected_version)
         if item.status == "Completed":
             raise HTTPException(status_code=409, detail="Completed follow-ups are retained as history. Schedule a new task instead")
-        updates = data.model_dump(exclude_unset=True, by_alias=False)
-        enforce_follow_assignment(db, updates)
         at = utc_now()
         history = list(item.history)
         next_item = None
@@ -149,14 +147,21 @@ def update_follow_up(follow_up_id: str, data: FollowUpUpdate, db: Session = Depe
         else:
             if data.next_due_at is not None or data.outcome is not None or data.completion_notes is not None:
                 raise HTTPException(status_code=422, detail="Outcome and next-follow-up fields are only accepted when completing a task")
+            updates = data.model_dump(exclude_unset=True, by_alias=False)
+            details = {"purpose", "type", "assigned_to", "priority", "reminder_minutes", "notes"}
+            user = actor(db)
+            if user is not None and user.role == "Staff":
+                # Staff ownership comes from the linked lead, never a submitted display name.
+                updates.pop("assigned_to", None)
+                if not user.can_edit_follow_ups and any(updates[key] != getattr(item, key) for key in details & updates.keys()):
+                    raise HTTPException(403, "Your administrator has not enabled follow-up editing")
             if data.due_at is not None and utc(data.due_at) != utc(item.due_at):
                 if not data.reschedule_reason or utc(data.due_at) <= at:
                     raise HTTPException(status_code=422, detail="Rescheduling requires a future time and a reason")
                 history.append(event(f"Rescheduled from {utc(item.due_at).isoformat()} to {utc(data.due_at).isoformat()}. Reason: {data.reschedule_reason}", at))
             else:
                 history.append(event("Follow-up details updated.", at))
-            writable = {"purpose", "type", "due_at", "assigned_to", "priority", "reminder_minutes", "notes"}
-            for field in writable & updates.keys():
+            for field in (details | {"due_at"}) & updates.keys():
                 setattr(item, field, utc(updates[field]) if field == "due_at" else updates[field])
         item.history = history
         db.commit()
@@ -169,7 +174,9 @@ def update_follow_up(follow_up_id: str, data: FollowUpUpdate, db: Session = Depe
 @router.delete("/{follow_up_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_follow_up(follow_up_id: str, db: Session = Depends(get_crm_db), expectedVersion: Annotated[int | None, Query(ge=1)] = None):
     with database_operation(db):
-        require_admin(db)
+        user = actor(db)
+        if user is not None and user.role == "Staff" and not user.can_delete_follow_ups:
+            raise HTTPException(403, "Your administrator has not enabled follow-up deletion")
         item = find(db, follow_up_id, lock=True)
         claim_version(db, FollowUp, item, expectedVersion)
         item.deleted_at = utc_now()

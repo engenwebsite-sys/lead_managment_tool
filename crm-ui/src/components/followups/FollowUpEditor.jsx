@@ -11,21 +11,26 @@ function Field({ label, children, wide = false }) {
   return <label className={`flex min-w-0 flex-col gap-2 text-xs font-semibold text-slate-800 ${wide ? "sm:col-span-2" : ""}`}>{label}{children}</label>;
 }
 
-export default function FollowUpEditor({ mode, record, onSave, onClose }) {
+export default function FollowUpEditor({ mode, record, canEditDetails, onSave, onClose }) {
   const completing = mode === "complete";
   const rescheduling = mode === "reschedule";
+  const editing = mode === "edit";
+  const detailsLocked = rescheduling && !canEditDetails;
+  const title = completing ? "Complete follow-up" : rescheduling ? "Reschedule follow-up" : editing ? "Edit follow-up" : "Schedule follow-up";
   const [form, setForm] = useState(() => ({
     leadId: record?.leadId || "",
     purpose: record?.purpose || "", type: record?.type || "Call",
     dueAt: istInput(record?.dueAt || Date.now() + runtimeSettings().leads.followUpDays * 86400000),
     assignedTo: record?.assignedTo || readStaff()[0], priority: record?.priority || runtimeSettings().leads.defaultPriority,
-    reminderMinutes: String(record?.reminderMinutes ?? runtimeSettings().notifications.reminderBefore), notes: rescheduling ? record.notes || "" : "",
+    reminderMinutes: String(record?.reminderMinutes ?? runtimeSettings().notifications.reminderBefore), notes: completing ? "" : record?.notes || "",
     outcome: "Connected", nextAt: "", reason: "",
   }));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const saveLock = useRef(false);
   const [lead, setLead] = useState(null);
+  const scheduleChanging = Boolean(record && form.dueAt !== istInput(record.dueAt));
+  const reasonRequired = rescheduling || (editing && scheduleChanging);
   function bind(name) {
     return { value: form[name], onChange: (event) => setForm((current) => ({ ...current, [name]: event.target.value })) };
   }
@@ -54,12 +59,12 @@ export default function FollowUpEditor({ mode, record, onSave, onClose }) {
             history: [history(`Scheduled next follow-up for ${formatFollowUpDate(dueAt)}.`)] };
         }
       } else {
-        const dueAt = fromIST(form.dueAt);
-        if (!form.purpose.trim() || !form.assignedTo.trim()) throw new Error("Enter the purpose and assigned staff.");
-        if (rescheduling && (!form.reason.trim() || Date.parse(dueAt) <= Date.now())) {
+        const dueAt = record && !scheduleChanging ? record.dueAt : fromIST(form.dueAt);
+        if (!detailsLocked && (!form.purpose.trim() || !form.assignedTo.trim())) throw new Error("Enter the purpose and assigned staff.");
+        if (reasonRequired && (!form.reason.trim() || Date.parse(dueAt) <= Date.now())) {
           throw new Error("Choose a future date and enter a reschedule reason.");
         }
-        updated = { ...record, id: record?.id || crypto.randomUUID(),
+        updated = detailsLocked ? { id: record.id, version: record.version, dueAt, rescheduleReason: form.reason.trim() } : { ...record, id: record?.id || crypto.randomUUID(),
           leadId: lead?.id || record.leadId, customer: lead?.customer || record.customer,
           division: lead?.division || record.division, referredBy: lead?.referredBy || record?.referredBy || null,
           leadSource: lead?.leadSource || record?.leadSource || "Not specified",
@@ -75,7 +80,7 @@ export default function FollowUpEditor({ mode, record, onSave, onClose }) {
     finally { saveLock.current = false; setSaving(false); }
   }
 
-  return <Modal title={completing ? "Complete follow-up" : rescheduling ? "Reschedule follow-up" : "Schedule follow-up"} onClose={saving ? () => {} : onClose}>
+  return <Modal title={title} onClose={saving ? () => {} : onClose}>
     <form onSubmit={submit}>
       <fieldset disabled={saving} className="min-w-0">
       <div className="grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
@@ -97,26 +102,26 @@ export default function FollowUpEditor({ mode, record, onSave, onClose }) {
           <p className="text-xs text-slate-700 sm:col-span-2">Completing this task does not change the lead's Won / Lost status.</p>
         </> : <>
           <div className="min-w-0 space-y-2 sm:col-span-2"><span className="block text-xs font-semibold text-slate-800">Customer / linked lead *</span>
-            <RecordPicker kind="lead" value={form.leadId} name={lead?.customer || record?.customer} disabled={rescheduling} onChange={(item) => { setLead(item); setForm((current) => ({ ...current, leadId: item.id })); }} />
+            <RecordPicker kind="lead" value={form.leadId} name={lead?.customer || record?.customer} disabled={Boolean(record)} onChange={(item) => { setLead(item); setForm((current) => ({ ...current, leadId: item.id })); }} />
           </div>
           <div className="rounded-xl border border-teal-100 bg-teal-50 p-4 text-xs leading-6 sm:col-span-2">
             <strong className="text-teal-950">Referred by: {lead?.referredBy?.name || record?.referredBy?.name || "Not specified"}</strong>
             <p className="text-slate-700">{lead?.referredBy?.company || record?.referredBy?.company || lead?.leadSource || record?.leadSource || (lead ? "No referral recorded for this lead." : "Select a lead to see reference details.")}</p>
           </div>
-          <Field label="Purpose *" wide><input required maxLength={200} placeholder="Quotation discussion, product demo..." className={inputClass} {...bind("purpose")} /></Field>
-          <Field label="Follow-up type"><select className={inputClass} {...bind("type")}>{["Call", "Email", "Meeting", "Other"].map((value) => <option key={value}>{value}</option>)}</select></Field>
+          <Field label="Purpose *" wide><input required readOnly={detailsLocked} maxLength={200} placeholder="Quotation discussion, product demo..." className={inputClass} {...bind("purpose")} /></Field>
+          <Field label="Follow-up type"><select disabled={detailsLocked} className={inputClass} {...bind("type")}>{["Call", "Email", "Meeting", "Other"].map((value) => <option key={value}>{value}</option>)}</select></Field>
           <Field label="Date & time *"><input required type="datetime-local" className={inputClass} {...bind("dueAt")} /></Field>
           <p className="self-center text-xs leading-6 text-slate-700">Staff access follows the selected lead. Administrators can reassign the lead in Settings &gt; Users &amp; access.</p>
-          <Field label="Priority"><select className={inputClass} {...bind("priority")}>{["High", "Medium", "Low"].map((value) => <option key={value}>{value}</option>)}</select></Field>
-          <Field label="Reminder before"><select className={inputClass} {...bind("reminderMinutes")}>{[0, 15, 30, 60, 120].map((value) => <option key={value} value={value}>{value === 0 ? "At scheduled time" : `${value} minutes`}</option>)}</select></Field>
-          {rescheduling && <Field label="Reason for rescheduling *" wide><textarea required rows={2} maxLength={500} className={inputClass} {...bind("reason")} /></Field>}
-          <Field label="Notes" wide><textarea rows={3} maxLength={2000} className={`${inputClass} resize-y`} {...bind("notes")} /></Field>
+          <Field label="Priority"><select disabled={detailsLocked} className={inputClass} {...bind("priority")}>{["High", "Medium", "Low"].map((value) => <option key={value}>{value}</option>)}</select></Field>
+          <Field label="Reminder before"><select disabled={detailsLocked} className={inputClass} {...bind("reminderMinutes")}>{[...new Set([0, 15, 30, 60, 120, Number(form.reminderMinutes)])].map((value) => <option key={value} value={value}>{value === 0 ? "At scheduled time" : `${value} minutes`}</option>)}</select></Field>
+          {reasonRequired && <Field label="Reason for rescheduling *" wide><textarea required rows={2} maxLength={500} className={inputClass} {...bind("reason")} /></Field>}
+          <Field label="Notes" wide><textarea readOnly={detailsLocked} rows={3} maxLength={2000} className={`${inputClass} resize-y`} {...bind("notes")} /></Field>
         </>}
         {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-xs text-rose-900 sm:col-span-2">{error}</p>}
       </div>
       <footer className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button type="submit"><Save size={16} />{saving ? "Saving..." : completing ? "Complete follow-up" : rescheduling ? "Save new schedule" : "Save follow-up"}</Button>
+        <Button type="submit"><Save size={16} />{saving ? "Saving..." : completing ? "Complete follow-up" : rescheduling ? "Save new schedule" : editing ? "Save changes" : "Save follow-up"}</Button>
       </footer>
       </fieldset>
     </form>

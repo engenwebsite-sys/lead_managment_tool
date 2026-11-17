@@ -34,6 +34,8 @@ class User(Base):
     lead_division: Mapped[str | None] = mapped_column(String(40))
     can_create_leads: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     lead_division_access: Mapped[dict[str, bool] | None] = mapped_column(JSON(none_as_null=True))
+    can_edit_follow_ups: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    can_delete_follow_ups: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
     admin_slot: Mapped[int | None] = mapped_column(Integer, nullable=True, default=default_admin_slot)

@@ -164,6 +164,50 @@ class CrmAccessTests(unittest.TestCase):
         self.assertEqual(self.client.get(f"/api/follow-ups/{task['id']}", headers=self.headers[3]).status_code, 404)
         self.assertEqual(self.client.post("/api/follow-ups", headers=self.headers[2], json={"leadId": lead["id"], "purpose": "Call", "dueAt": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()}).status_code, 404)
 
+    def test_follow_up_permissions_are_independent_and_keep_lead_scope(self):
+        staff_account = self.accounts[2]
+        lead = self.lead()
+        self.assertEqual(self.assign("leads", lead).status_code, 200)
+        future = datetime.now(timezone.utc) + timedelta(days=1)
+        created = self.client.post("/api/follow-ups", json={
+            "leadId": lead["id"], "purpose": "Review quote", "dueAt": future.isoformat(),
+        })
+        self.assertEqual(created.status_code, 201, created.text)
+        path = f"/api/follow-ups/{created.json()['id']}"
+        account_path = f"/api/users/{staff_account.id}"
+        headers = self.headers[2]
+        reschedule = {"expectedVersion": 1, "dueAt": (future + timedelta(days=1)).isoformat(), "rescheduleReason": "Client requested another date"}
+        self.assertEqual(self.client.put(path, headers=headers, json={**reschedule, "purpose": "Denied"}).status_code, 403)
+        self.assertEqual(self.client.put(path, headers=headers, json=reschedule).status_code, 200)
+        self.assertEqual(self.client.put(account_path, headers=headers, json={
+            "expectedVersion": 1, "canEditFollowUps": True,
+        }).status_code, 403)
+
+        def grant(version, **permissions):
+            saved = self.client.put(account_path, json={"expectedVersion": version, **permissions})
+            self.assertEqual(saved.status_code, 200, saved.text)
+            self.assertEqual(self.client.get(path, headers=headers).status_code, 401)
+            login = self.client.post("/api/auth/login", json={"email": staff_account.email, "password": TEST_PASSWORD})
+            self.assertEqual(login.status_code, 200, login.text)
+            self.assertEqual({key: login.json()["user"][key] for key in permissions}, permissions)
+            return {"Authorization": "Bearer " + login.json()["accessToken"]}
+
+        headers = grant(1, canEditFollowUps=True)
+        self.assertEqual(self.client.put(path, headers=headers, json={"expectedVersion": 2, "notes": "Updated"}).status_code, 200)
+        self.assertEqual(self.client.delete(path + "?expectedVersion=3", headers=headers).status_code, 403)
+
+        headers = grant(2, canEditFollowUps=False, canDeleteFollowUps=True)
+        self.assertEqual(self.client.put(path, headers=headers, json={"expectedVersion": 3, "notes": "Denied"}).status_code, 403)
+        another_lead = self.lead("Unassigned lead")
+        other = self.client.post("/api/follow-ups", json={
+            "leadId": another_lead["id"], "purpose": "Other", "dueAt": future.isoformat(),
+        }).json()
+        self.assertEqual(self.client.delete(f"/api/follow-ups/{other['id']}?expectedVersion=1", headers=headers).status_code, 404)
+        self.assertEqual(self.client.delete(path + "?expectedVersion=2", headers=headers).status_code, 409)
+        self.assertEqual(self.client.delete(path + "?expectedVersion=3", headers=headers).status_code, 204)
+        self.assertEqual(self.client.get(path).status_code, 404)
+        self.assertEqual(self.client.get(f"/api/leads/{lead['id']}").status_code, 200)
+
     def test_quote_pdf_versions_and_customer_profiles_do_not_leak_by_name(self):
         lead, customer, quote = self.lead(), self.customer(), self.quote()
         self.assign("leads", lead)

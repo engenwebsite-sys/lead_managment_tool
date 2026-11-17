@@ -1,9 +1,9 @@
 import useServerPage from "../hooks/useServerPage";
 import useWorkspaceData from "../hooks/useWorkspaceData";
-import { getFollowUpsPage, createFollowUp, updateFollowUp } from "../services/followUpsApi";
+import { getFollowUpsPage, createFollowUp, updateFollowUp, deleteFollowUp } from "../services/followUpsApi";
 import Pagination from "../components/Pagination";
-import { useState } from "react";
-import { CalendarClock, Plus, Search, Check, History, RefreshCw, Clock3, CheckCheck, AlertCircle } from "lucide-react";
+import { useRef, useState } from "react";
+import { CalendarClock, Plus, Search, Check, History, RefreshCw, Clock3, CheckCheck, AlertCircle, Pencil, Trash2 } from "lucide-react";
 import { divisionLabel } from "../data/crm";
 import { useSettings } from "../context/SettingsContext";
 import { viewLeadDivisions } from "../lib/permissions";
@@ -20,8 +20,22 @@ const summaryItems = [
   { name: "Completed", icon: CheckCheck, tone: "bg-emerald-50 text-emerald-800", caption: "Conversations recorded" },
 ];
 
+function FollowUpActions({ item, canEdit, canDelete, onEdit, onHistory, onDelete }) {
+  return <div className="flex flex-wrap items-center gap-1">
+    {item.status === "Pending" && <>
+      <IconButton aria-label={`Complete ${item.purpose}`} title="Complete" onClick={() => onEdit("complete")}><Check size={17} /></IconButton>
+      <IconButton aria-label={`Reschedule ${item.purpose}`} title="Reschedule" onClick={() => onEdit("reschedule")}><RefreshCw size={16} /></IconButton>
+      {canEdit && <IconButton aria-label={`Edit ${item.purpose}`} title="Edit follow-up" className="text-teal-800" onClick={() => onEdit("edit")}><Pencil size={16} /></IconButton>}
+    </>}
+    <IconButton aria-label={`History for ${item.customer}`} title="Customer history" onClick={onHistory}><History size={17} /></IconButton>
+    {canDelete && <IconButton aria-label={`Delete ${item.purpose}`} title="Delete follow-up" className="text-rose-700" onClick={onDelete}><Trash2 size={16} /></IconButton>}
+  </div>;
+}
+
 export default function FollowUps({ now, onChanged }) {
   const { user } = useSettings();
+  const canEdit = user.role === "Admin" || user.canEditFollowUps === true;
+  const canDelete = user.role === "Admin" || user.canDeleteFollowUps === true;
   const divisions = viewLeadDivisions(user);
   const [tab, setTab] = useState("All");
   const [search, setSearch] = useState("");
@@ -30,6 +44,10 @@ export default function FollowUps({ now, onChanged }) {
   const [date, setDate] = useState("");
   const [editor, setEditor] = useState(null);
   const [history, setHistory] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const deleteLock = useRef(false);
   const [notice, setNotice] = useState("");
   const pagination = useServerPage(getFollowUpsPage, { division, assignedTo: staff, date, q: search, view: tab });
   const { rows: pageRows, loading, error: storageError, refresh: onRefresh } = pagination;
@@ -41,6 +59,33 @@ export default function FollowUps({ now, onChanged }) {
     onRefresh(); onChanged?.();
     setEditor(null);
     setNotice(`Follow-up saved at ${new Date().toLocaleTimeString()}.`);
+  }
+
+  function actions(item) {
+    return <FollowUpActions item={item} canEdit={canEdit} canDelete={canDelete}
+      onEdit={(mode) => setEditor({ mode, record: item })}
+      onHistory={() => setHistory(item)}
+      onDelete={() => { setDeleteError(""); setDeleteTarget(item); }} />;
+  }
+
+  async function confirmDelete() {
+    if (deleteLock.current) return;
+    deleteLock.current = true;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteFollowUp(deleteTarget.id, deleteTarget.version);
+      setDeleteTarget(null);
+      onRefresh();
+      onChanged?.();
+      setNotice("Follow-up archived.");
+    } catch (error) {
+      setDeleteError(error.message || "Could not delete the follow-up.");
+      if (error.status === 409 || error.status === 404) onRefresh();
+    } finally {
+      deleteLock.current = false;
+      setDeleting(false);
+    }
   }
 
   return <div className="space-y-4">
@@ -87,8 +132,7 @@ export default function FollowUps({ now, onChanged }) {
             <p className={`flex items-start gap-2 text-[11px] leading-5 ${overdue ? "font-semibold text-rose-800" : "text-slate-700"}`}><CalendarClock size={14} className="mt-0.5 shrink-0" />{formatFollowUpDate(item.dueAt)} IST</p>
             <dl className="mt-3 space-y-1.5 text-[11px]"><div className="flex justify-between gap-3"><dt className="shrink-0 text-slate-600">Referred by</dt><dd className="min-w-0 break-words text-right font-semibold text-teal-900">{item.referredBy?.name || "Not specified"}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-600">Assigned to</dt><dd className="min-w-0 break-words text-right text-slate-900">{item.assignedTo}</dd></div></dl>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2"><span className={`text-[11px] font-semibold ${item.priority === "High" ? "text-rose-800" : "text-slate-700"}`}>{item.priority} · {item.type}</span><div className="flex gap-1">
-              {item.status === "Pending" && <><IconButton aria-label={`Complete ${item.purpose}`} onClick={() => setEditor({ mode: "complete", record: item })}><Check size={17} /></IconButton><IconButton aria-label={`Reschedule ${item.purpose}`} onClick={() => setEditor({ mode: "reschedule", record: item })}><RefreshCw size={16} /></IconButton></>}
-              <IconButton aria-label={`History for ${item.customer}`} onClick={() => setHistory(item)}><History size={17} /></IconButton>
+              {actions(item)}
             </div></div>
           </article>;
         })}
@@ -106,10 +150,7 @@ export default function FollowUps({ now, onChanged }) {
               <td className="px-5 py-4">{item.assignedTo}</td>
               <td className={`px-5 py-4 font-semibold ${item.priority === "High" ? "text-rose-800" : item.priority === "Medium" ? "text-amber-800" : "text-emerald-800"}`}>{item.priority}</td>
               <td className="px-5 py-4"><span className={`rounded-md px-2 py-1 text-[10px] font-semibold ${item.status === "Completed" ? "bg-emerald-50 text-emerald-900" : overdue ? "bg-rose-100 text-rose-900" : "bg-amber-50 text-amber-900"}`}>{overdue ? "Overdue" : item.status}</span></td>
-              <td className="px-5 py-4"><div className="flex items-center gap-1">
-                {item.status === "Pending" && <><IconButton aria-label={`Complete ${item.purpose}`} title="Complete" onClick={() => setEditor({ mode: "complete", record: item })}><Check size={17} /></IconButton><IconButton aria-label={`Reschedule ${item.purpose}`} title="Reschedule" onClick={() => setEditor({ mode: "reschedule", record: item })}><RefreshCw size={16} /></IconButton></>}
-                <IconButton aria-label={`History for ${item.customer}`} title="Customer history" onClick={() => setHistory(item)}><History size={17} /></IconButton>
-              </div></td>
+              <td className="px-5 py-4">{actions(item)}</td>
             </tr>;
           })}</tbody>
         </table>
@@ -119,7 +160,19 @@ export default function FollowUps({ now, onChanged }) {
     </Card>
 
     <Pagination pagination={pagination} />
-    {editor && <FollowUpEditor mode={editor.mode} record={editor.record} onClose={() => setEditor(null)} onSave={save} />}
+    {editor && <FollowUpEditor mode={editor.mode} record={editor.record} canEditDetails={canEdit} onClose={() => setEditor(null)} onSave={save} />}
+    {deleteTarget && <Modal title="Delete follow-up?" onClose={() => { if (!deleteLock.current) setDeleteTarget(null); }}>
+      <div className="space-y-4 p-5">
+        <p className="text-sm text-slate-700">Archive <strong>{deleteTarget.purpose}</strong> for {deleteTarget.customer}?</p>
+        {deleteError && <p role="alert" className="text-sm text-rose-800">{deleteError}</p>}
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="secondary" disabled={deleting} onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <Button className="bg-rose-700 hover:bg-rose-800" disabled={deleting} onClick={confirmDelete}>
+            {deleting ? "Deleting..." : "Delete follow-up"}
+          </Button>
+        </div>
+      </div>
+    </Modal>}
     {history && <Modal title={`${history.customer} · Task history`} onClose={() => setHistory(null)}>
       <div className="p-6">
         <div className="mb-6 rounded-xl bg-teal-50 p-4 text-xs leading-6 text-slate-800">

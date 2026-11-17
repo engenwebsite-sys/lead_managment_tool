@@ -50,6 +50,8 @@ class VerifyRecoveryOtpRequest(BaseModel):
 
 
 class UserResponse(ApiModel):
+    can_edit_follow_ups: bool = Field(default=False, alias="canEditFollowUps")
+    can_delete_follow_ups: bool = Field(default=False, alias="canDeleteFollowUps")
     lead_access: dict[Division, bool] = Field(default_factory=dict, alias="leadAccess")
     lead_division: Division | None = Field(default=None, alias="leadDivision")
     can_create_leads: bool = Field(default=False, alias="canCreateLeads")

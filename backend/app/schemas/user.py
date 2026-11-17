@@ -14,6 +14,8 @@ class UserCreate(LoginRequest):
     lead_division: Division | None = Field(default=None, alias="leadDivision")
     can_create_leads: bool = Field(default=False, alias="canCreateLeads")
     lead_access: dict[Division, bool] = Field(default_factory=dict, alias="leadAccess")
+    can_edit_follow_ups: bool = Field(default=False, alias="canEditFollowUps")
+    can_delete_follow_ups: bool = Field(default=False, alias="canDeleteFollowUps")
 
     @field_validator("name")
     @classmethod
@@ -35,6 +37,8 @@ class UserUpdate(BaseModel):
     lead_division: Division | None = Field(default=None, alias="leadDivision")
     can_create_leads: bool | None = Field(default=None, alias="canCreateLeads")
     lead_access: dict[Division, bool] = Field(default_factory=dict, alias="leadAccess")
+    can_edit_follow_ups: bool | None = Field(default=None, alias="canEditFollowUps")
+    can_delete_follow_ups: bool | None = Field(default=None, alias="canDeleteFollowUps")
 
     @model_validator(mode="before")
     @classmethod
