@@ -63,6 +63,14 @@ def require_lead_creation(db, division):
         raise HTTPException(403, "Your administrator has not enabled lead creation for this division")
 
 
+def require_lead_action(db, division, action):
+    user = actor(db)
+    if user is not None and user.role == "Staff" and (
+        division not in user.lead_access or action not in user.lead_actions.get(division, ())
+    ):
+        raise HTTPException(403, f"Your administrator has not enabled lead {action} access for this division")
+
+
 def require_record_division(db, divisions):
     user = actor(db)
     if user is not None and user.role == "Staff" and (not divisions or set(divisions) - user.lead_access.keys()):

@@ -7,11 +7,14 @@ import { divisionLabel, divisions } from "../../data/crm";
 import { leadAccessFor } from "../../lib/permissions";
 
 const fieldClass = "mt-1.5 block min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100";
+const divisionGrid = "grid grid-cols-[minmax(0,1fr)_repeat(4,2.5rem)] items-center sm:grid-cols-[minmax(0,1fr)_repeat(4,5rem)]";
+const leadPermissionLabels = [["view", "View leads"], ["add", "Add leads"], ["edit", "Edit leads"], ["delete", "Delete leads"]];
 
 function AccountForm({ account, adminCount, onSave, onClose }) {
   const [form, setForm] = useState({
     name: account?.name || "", email: account?.email || "", role: account?.role || "Staff",
-    isActive: account?.isActive ?? true, password: "", confirmPassword: "", leadAccess: leadAccessFor(account),
+    isActive: account?.isActive ?? true, password: "", confirmPassword: "",
+    leadAccess: leadAccessFor(account), leadActions: account?.leadActions ?? {},
     canEditFollowUps: account?.canEditFollowUps === true, canDeleteFollowUps: account?.canDeleteFollowUps === true,
   });
   const [busy, setBusy] = useState(false);
@@ -19,12 +22,22 @@ function AccountForm({ account, adminCount, onSave, onClose }) {
   const lock = useRef(false);
   const adminAvailable = adminCount < 2 || account?.role === "Admin";
   function bind(key) { return { value: form[key], onChange: (event) => setForm((current) => ({ ...current, [key]: event.target.value })) }; }
-  function setDivisionAccess(division, allowView, allowAdd) {
+  function setDivisionPermission(division, permission, checked) {
     setForm((current) => {
       const leadAccess = { ...current.leadAccess };
-      if (allowView) leadAccess[division] = allowAdd;
-      else delete leadAccess[division];
-      return { ...current, leadAccess };
+      const leadActions = { ...current.leadActions };
+      if (permission === "view" && !checked) {
+        delete leadAccess[division];
+        delete leadActions[division];
+      } else if (permission === "view" || permission === "add") {
+        leadAccess[division] = permission === "add" && checked;
+      } else {
+        const actions = new Set(leadActions[division]);
+        if (checked) actions.add(permission);
+        else actions.delete(permission);
+        leadActions[division] = [...actions];
+      }
+      return { ...current, leadAccess, leadActions };
     });
   }
   async function submit(event) {
@@ -46,23 +59,25 @@ function AccountForm({ account, adminCount, onSave, onClose }) {
       {form.role === "Staff" && <fieldset className="min-w-0">
         <legend className="text-xs font-semibold text-slate-800">Lead division permissions</legend>
         <div className="mt-2 divide-y divide-slate-200 rounded-lg border border-slate-200">
-          <div aria-hidden="true" className="grid grid-cols-[minmax(0,1fr)_5rem_5rem] items-center p-2 text-center text-xs font-semibold text-slate-700">
-            <span className="text-left">Division</span><span>View leads</span><span>Add leads</span>
+          <div aria-hidden="true" className={`${divisionGrid} p-2 text-center text-xs font-semibold text-slate-700`}>
+            <span className="text-left">Division</span>
+            {leadPermissionLabels.map(([key, title]) => <span key={key}>{title}</span>)}
           </div>
           {divisions.map((division) => {
             const label = divisionLabel(division);
             const canView = Object.hasOwn(form.leadAccess, division);
-            return <div key={division} className="grid min-h-10 grid-cols-[minmax(0,1fr)_5rem_5rem] items-center px-2 text-sm text-slate-800">
-              <span>{label}</span>
-              <label className="flex min-h-10 items-center justify-center">
-                <input type="checkbox" aria-label={`View leads in ${label}`} className="size-4 accent-teal-800"
-                  checked={canView} onChange={(event) => setDivisionAccess(division, event.target.checked, false)} />
-              </label>
-              <label className="flex min-h-10 items-center justify-center">
-                <input type="checkbox" aria-label={`Add leads in ${label}`} className="size-4 accent-teal-800"
-                  disabled={!canView} checked={form.leadAccess[division] === true}
-                  onChange={(event) => setDivisionAccess(division, true, event.target.checked)} />
-              </label>
+            const checked = {
+              view: canView, add: form.leadAccess[division] === true,
+              edit: form.leadActions[division]?.includes("edit") ?? false,
+              delete: form.leadActions[division]?.includes("delete") ?? false,
+            };
+            return <div key={division} className={`${divisionGrid} min-h-10 px-2 text-sm text-slate-800`}>
+              <span className="break-words pr-1">{label}</span>
+              {leadPermissionLabels.map(([key, title]) => <label key={key} className="flex min-h-10 items-center justify-center">
+                <input type="checkbox" aria-label={`${title} in ${label}`} className="size-4 accent-teal-800"
+                  disabled={key !== "view" && !canView} checked={checked[key]}
+                  onChange={(event) => setDivisionPermission(division, key, event.target.checked)} />
+              </label>)}
             </div>;
           })}
         </div>

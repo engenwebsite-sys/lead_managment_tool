@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.services.crm_access import get_crm_db, scoped, require_admin, require_lead_creation, creation_assignment
+from app.services.crm_access import actor, get_crm_db, scoped, require_lead_action, require_lead_creation, creation_assignment
 from app.db.operations import database_operation
 from app.models.lead import Lead
 from app.models.follow_up import FollowUp
@@ -65,9 +65,12 @@ def get_lead(lead_id: str, db: Session = Depends(get_crm_db)):
 def update_lead(lead_id: str, data: LeadUpdate, db: Session = Depends(get_crm_db)):
     with database_operation(db):
         lead = find_lead(db, lead_id, lock=True)
-        require_admin(db, "Only administrators can edit leads")
+        require_lead_action(db, lead.division, "edit")
         expected_version(db, lead, data.expected_version)
         updates = data.model_dump(exclude_unset=True, by_alias=False, exclude={"expected_version"})
+        user = actor(db)
+        if user is not None and user.role == "Staff" and updates.get("division", lead.division) != lead.division:
+            raise HTTPException(403, "Only administrators can move leads to a different division")
         candidate = {field: getattr(lead, field) for field in LeadCreate.model_fields}
         candidate.update(updates)
         try:
@@ -88,8 +91,8 @@ def update_lead(lead_id: str, data: LeadUpdate, db: Session = Depends(get_crm_db
 @router.delete("/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_lead(lead_id: str, db: Session = Depends(get_crm_db), expectedVersion: Annotated[int | None, Query(ge=1)] = None):
     with database_operation(db):
-        require_admin(db)
         lead = find_lead(db, lead_id, lock=True)
+        require_lead_action(db, lead.division, "delete")
         expected_version(db, lead, expectedVersion)
         if db.scalar(select(FollowUp.id).where(FollowUp.lead_id == lead_id).limit(1)) is not None:
             raise HTTPException(status_code=409, detail="This lead has follow-up history and cannot be deleted")

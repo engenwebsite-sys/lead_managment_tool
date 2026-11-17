@@ -224,8 +224,8 @@ function Workspace({ user, onLogout, signingOut }) {
               onViewFollowUps={() => navigate("Follow-ups")}
             />
           ) : <Card className="p-5"><p role={overview.error ? "alert" : "status"} className="text-sm text-slate-800">{overview.error || "Loading workspace summary..."}</p></Card>) : page === "Leads" ? (
-            <LeadRegister division={division} revision={revision} onUpdateLead={isAdmin ? handleUpdateLead : undefined}
-              onDeleteLead={isAdmin ? handleDeleteLead : undefined} />
+            <LeadRegister division={division} revision={revision} user={user}
+              onUpdateLead={handleUpdateLead} onDeleteLead={handleDeleteLead} />
           ) : page === "Customers" ? (
             <Customers onChanged={changed} />
           ) : page === "Settings" ? (

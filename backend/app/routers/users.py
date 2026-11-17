@@ -22,7 +22,7 @@ def require_owner(user: User = Depends(get_current_user)):
 def snapshot(user):
     return {"name": user.name, "email": user.email, "role": user.role, "isActive": user.is_active,
             "leadDivision": user.lead_division, "canCreateLeads": user.can_create_leads,
-            "leadAccess": user.lead_access, "canEditFollowUps": user.can_edit_follow_ups,
+            "leadAccess": user.lead_access, "leadActions": user.lead_actions, "canEditFollowUps": user.can_edit_follow_ups,
             "canDeleteFollowUps": user.can_delete_follow_ups, "version": user.version}
 
 
@@ -68,6 +68,31 @@ def can_read(actor, target):
     return actor.is_owner or actor.id == target.id or (actor.role == "Admin" and target.role == "Staff")
 
 
+def resolve_lead_actions(changes, role, target=None):
+    explicit = "lead_actions" in changes
+    actions = changes.get("lead_actions", target.lead_actions if target else {})
+    if role == "Admin":
+        if explicit and any(actions.values()):
+            raise HTTPException(422, "Lead action grants apply only to Staff accounts")
+        changes["lead_actions"] = {}
+        return
+
+    if "lead_division_access" in changes:
+        access = changes["lead_division_access"]
+        if access is None:
+            division = changes["lead_division"]
+            access = {division: changes["can_create_leads"]} if division else {}
+    else:
+        access = target.lead_access if target else {}
+
+    if explicit and any(values and division not in access for division, values in actions.items()):
+        raise HTTPException(422, "Grant View leads before granting Edit or Delete leads")
+    changes["lead_actions"] = {
+        division: sorted(set(values))
+        for division, values in actions.items() if values and division in access
+    }
+
+
 @router.get("", response_model=UserDirectory)
 def list_users(response: Response, actor: User = Depends(get_current_user), db: Session = Depends(get_db)):
     with database_operation(db):
@@ -94,8 +119,9 @@ def get_user(user_id: str, response: Response, actor: User = Depends(get_current
 @router.post("", status_code=201, response_model=ManagedUser)
 def create_user(data: UserCreate, actor: User = Depends(require_owner), db: Session = Depends(get_db)):
     with database_operation(db):
-        access = data.model_dump(exclude_unset=True, include={"lead_access", "lead_division", "can_create_leads", *FOLLOW_UP_PERMISSIONS})
+        access = data.model_dump(exclude_unset=True, include={"lead_access", "lead_actions", "lead_division", "can_create_leads", *FOLLOW_UP_PERMISSIONS})
         resolve_lead_access(access, data.role)
+        resolve_lead_actions(access, data.role)
         normalize_follow_up_permissions(access, data.role)
         if data.role == "Admin" and db.scalar(select(User.id).where(User.admin_slot == 2)) is not None:
             raise HTTPException(409, "Maximum two Admin accounts allowed. Demote the second administrator before adding another")
@@ -124,13 +150,14 @@ def update_user(user_id: str, data: UserUpdate, actor: User = Depends(require_ow
         raw_password = changes.pop("password", None)
         role = changes.get("role", target.role)
         resolve_lead_access(changes, role, target)
+        resolve_lead_actions(changes, role, target)
         normalize_follow_up_permissions(changes, role)
         if role == "Admin" and db.scalar(select(User.id).where(User.admin_slot == 2, User.id != target.id)) is not None:
             raise HTTPException(409, "Maximum two Admin accounts allowed")
         before = snapshot(target)
         revoke = raw_password is not None or any(
             key in changes and changes[key] != getattr(target, key)
-            for key in ("email", "role", "is_active", "lead_division", "can_create_leads", *FOLLOW_UP_PERMISSIONS)
+            for key in ("email", "role", "is_active", "lead_division", "can_create_leads", "lead_actions", *FOLLOW_UP_PERMISSIONS)
         )
         if "lead_division_access" in changes and changes["lead_division_access"] is not None:
             revoke = revoke or changes["lead_division_access"] != target.lead_access

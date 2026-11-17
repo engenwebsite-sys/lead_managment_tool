@@ -45,6 +45,8 @@ export default function LeadTable({
     onViewAll,
     onUpdateLead,
     onDeleteLead,
+    canEditLead,
+    canDeleteLead,
     remote,
 }) {
     const [localSearch, setLocalSearch] = useState("");
@@ -57,13 +59,13 @@ export default function LeadTable({
     const [savingId, setSavingId] = useState(null);
     const [actionError, setActionError] = useState("");
 
-    const canManage = Boolean(
-        !compact && onUpdateLead && !remote?.pagination.loading
-    );
+    const actionsAvailable = !compact && !remote?.pagination.loading;
+    const canEdit = (lead) => actionsAvailable && onUpdateLead && canEditLead?.(lead);
+    const canDelete = (lead) => actionsAvailable && onDeleteLead && canDeleteLead?.(lead);
 
     // START EDIT
     function startEdit(lead) {
-        if (!canManage || savingId !== null) return;
+        if (!canEdit(lead) || savingId !== null) return;
 
         setEditingId(lead.id);
         setEditVersion(lead.version);
@@ -81,8 +83,9 @@ export default function LeadTable({
     }
 
     // UPDATE LEAD API
-    async function saveEdit(id) {
-        if (!onUpdateLead || savingId !== null) return;
+    async function saveEdit(lead) {
+        if (!canEdit(lead) || savingId !== null) return;
+        const { id } = lead;
 
         setSavingId(id);
         setActionError("");
@@ -106,7 +109,7 @@ export default function LeadTable({
 
     // DELETE LEAD API
     async function removeLead(lead) {
-        if (!onDeleteLead || savingId !== null) return;
+        if (!canDelete(lead) || savingId !== null) return;
 
         const confirmed = window.confirm(
             `Are you sure you want to delete ${lead.customer}?`
@@ -160,6 +163,7 @@ export default function LeadTable({
     const displayed = compact
         ? filtered.slice(0, 5)
         : pagination.rows;
+    const showActions = displayed.some((lead) => canEdit(lead) || canDelete(lead));
 
     return (
         <Card>
@@ -262,9 +266,9 @@ export default function LeadTable({
                         </dl>
 
                         {/* MOBILE EDIT / DELETE */}
-                        {canManage && (
+                        {(canEdit(lead) || canDelete(lead)) && (
                             <div className="mt-3 border-t border-slate-100 pt-3">
-                                {editingId === lead.id ? (
+                                {editingId === lead.id && canEdit(lead) ? (
                                     <div className="space-y-2">
                                         <label className="block text-xs font-semibold">
                                             Status
@@ -308,7 +312,7 @@ export default function LeadTable({
                                             <button
                                                 type="button"
                                                 disabled={savingId !== null}
-                                                onClick={() => saveEdit(lead.id)}
+                                                onClick={() => saveEdit(lead)}
                                                 className="flex items-center gap-1 rounded-lg bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
                                             >
                                                 <Check size={14} />
@@ -330,7 +334,7 @@ export default function LeadTable({
                                     </div>
                                 ) : (
                                     <div className="flex gap-2">
-                                        <button
+                                        {canEdit(lead) && <button
                                             type="button"
                                             disabled={savingId !== null}
                                             onClick={() => startEdit(lead)}
@@ -338,9 +342,9 @@ export default function LeadTable({
                                         >
                                             <Pencil size={13} />
                                             Edit
-                                        </button>
+                                        </button>}
 
-                                        {onDeleteLead && <button
+                                        {canDelete(lead) && <button
                                             type="button"
                                             disabled={savingId !== null}
                                             onClick={() => removeLead(lead)}
@@ -371,7 +375,7 @@ export default function LeadTable({
                                 "Requirement",
                                 "Status",
                                 "Priority",
-                                ...(canManage ? ["Actions"] : []),
+                                ...(showActions ? ["Actions"] : []),
                             ].map((label) => (
                                 <th key={label} className="px-5 py-3">
                                     {label}
@@ -440,7 +444,7 @@ export default function LeadTable({
 
                                 {/* STATUS */}
                                 <td className="px-5 py-4">
-                                    {editingId === lead.id && canManage ? (
+                                    {editingId === lead.id && canEdit(lead) ? (
                                         <select
                                             value={editStatus}
                                             disabled={savingId !== null}
@@ -469,7 +473,7 @@ export default function LeadTable({
 
                                 {/* PRIORITY */}
                                 <td className="px-5 py-4">
-                                    {editingId === lead.id && canManage ? (
+                                    {editingId === lead.id && canEdit(lead) ? (
                                         <select
                                             value={editPriority}
                                             disabled={savingId !== null}
@@ -497,17 +501,17 @@ export default function LeadTable({
                                 </td>
 
                                 {/* ACTIONS */}
-                                {canManage && (
+                                {showActions && (
                                     <td className="px-5 py-4">
                                         <div className="flex items-center gap-2">
-                                            {editingId === lead.id ? (
+                                            {editingId === lead.id && canEdit(lead) ? (
                                                 <>
                                                     <button
                                                         type="button"
                                                         title="Save changes"
                                                         aria-label="Save lead changes"
                                                         disabled={savingId !== null}
-                                                        onClick={() => saveEdit(lead.id)}
+                                                        onClick={() => saveEdit(lead)}
                                                         className="rounded-lg p-2 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                                                     >
                                                         <Check size={16} />
@@ -526,7 +530,7 @@ export default function LeadTable({
                                                 </>
                                             ) : (
                                                 <>
-                                                    <button
+                                                    {canEdit(lead) && <button
                                                         type="button"
                                                         title="Edit lead"
                                                         aria-label={`Edit ${lead.customer}`}
@@ -535,9 +539,9 @@ export default function LeadTable({
                                                         className="rounded-lg p-2 text-teal-700 hover:bg-teal-50 disabled:opacity-50"
                                                     >
                                                         <Pencil size={16} />
-                                                    </button>
+                                                    </button>}
 
-                                                    {onDeleteLead && <button
+                                                    {canDelete(lead) && <button
                                                         type="button"
                                                         title="Delete lead"
                                                         aria-label={`Delete ${lead.customer}`}

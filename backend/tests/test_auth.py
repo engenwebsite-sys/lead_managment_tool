@@ -86,7 +86,7 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(profile.status_code, 200)
         self.assertEqual(set(profile.json()), {"id", "email", "name", "role", "isActive", "isOwner", "version",
                                                "canAccessQuotations", "leadDivision", "canCreateLeads", "leadAccess",
-                                               "canEditFollowUps", "canDeleteFollowUps"})
+                                               "canEditFollowUps", "canDeleteFollowUps", "leadActions"})
 
     def test_wrong_missing_and_inactive_accounts_have_generic_errors(self):
         responses = []

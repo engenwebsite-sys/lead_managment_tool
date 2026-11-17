@@ -147,6 +147,37 @@ class CrmAccessTests(unittest.TestCase):
         self.assertEqual(updated.json()["leadAccess"], {"ENGEN": False})
         self.assertEqual(self.client.get("/api/leads", headers=staff).status_code, 401)
 
+    def test_staff_lead_edit_and_delete_grants_are_division_scoped(self):
+        created = self.client.post("/api/users", json={
+            "name": "Lead Staff", "email": "lead-actions@example.test", "password": TEST_PASSWORD,
+            "leadAccess": {"MMC": False, "ENGEN": False},
+            "leadActions": {"MMC": ["edit"], "ENGEN": ["delete"]},
+        })
+        self.assertEqual(created.status_code, 201, created.text)
+        account_path = "/api/users/" + created.json()["id"]
+        login = self.client.post("/api/auth/login", json={"email": "lead-actions@example.test", "password": TEST_PASSWORD})
+        self.assertEqual(login.json()["user"]["leadActions"], {"MMC": ["edit"], "ENGEN": ["delete"]})
+        staff = {"Authorization": "Bearer " + login.json()["accessToken"]}
+        mmc = "/api/leads/" + self.lead()["id"]
+        engen = "/api/leads/" + self.client.post("/api/leads", json={
+            "customer": "ENGEN prospect", "division": "ENGEN", "description": "Engineering",
+        }).json()["id"]
+        other = "/api/leads/" + self.client.post("/api/leads", json={
+            "customer": "Other prospect", "division": "nemilink", "description": "Engineering",
+        }).json()["id"]
+        self.assertEqual(self.client.put(mmc, headers=staff, json={"expectedVersion": 1, "division": "ENGEN"}).status_code, 403)
+        self.assertEqual(self.client.put(mmc, headers=staff, json={"expectedVersion": 1, "priority": "High"}).status_code, 200)
+        self.assertEqual(self.client.delete(mmc + "?expectedVersion=2", headers=staff).status_code, 403)
+        self.assertEqual(self.client.put(engen, headers=staff, json={"expectedVersion": 1, "priority": "High"}).status_code, 403)
+        self.assertEqual(self.client.delete(other + "?expectedVersion=1", headers=staff).status_code, 404)
+        self.assertEqual(self.client.delete(engen + "?expectedVersion=1", headers=staff).status_code, 204)
+        orphaned = self.client.put(account_path, json={"expectedVersion": 1, "leadActions": {"nemilink": ["edit"]}})
+        self.assertEqual(orphaned.status_code, 422)
+        saved = self.client.put(account_path, json={"expectedVersion": 1, "leadAccess": {"ENGEN": False}})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["leadActions"], {"ENGEN": ["delete"]})
+        self.assertEqual(self.client.get(engen, headers=staff).status_code, 401)
+
     def test_followups_inherit_lead_access_and_reassignment(self):
         lead = self.lead()
         self.assign("leads", lead)

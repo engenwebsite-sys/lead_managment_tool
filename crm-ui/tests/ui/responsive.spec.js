@@ -79,7 +79,7 @@ test("customer, quotation and follow-up controls show only staff divisions", asy
   await expect(page.getByRole("combobox", { name: "Filter follow-ups by division" }).getByRole("option")).toHaveText(options);
 });
 
-test("clearing division view access also clears and disables add access", async ({ page }) => {
+test("clearing division view access also clears and disables lead add, edit and delete", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await mockCrm(page);
   await page.goto("/");
@@ -90,14 +90,38 @@ test("clearing division view access also clears and disables add access", async 
   const dialog = page.getByRole("dialog", { name: "Create login account" });
   const view = dialog.getByRole("checkbox", { name: "View leads in ENGEN" });
   const add = dialog.getByRole("checkbox", { name: "Add leads in ENGEN" });
+  const edit = dialog.getByRole("checkbox", { name: "Edit leads in ENGEN" });
+  const remove = dialog.getByRole("checkbox", { name: "Delete leads in ENGEN" });
   await expect(add).toBeDisabled();
   await view.check();
   await add.check();
+  await edit.check();
+  await remove.check();
   await dialog.getByRole("checkbox", { name: "View leads in Nemilink" }).check();
   await view.uncheck();
-  await expect(add).not.toBeChecked();
-  await expect(add).toBeDisabled();
+  for (const permission of [add, edit, remove]) {
+    await expect(permission).not.toBeChecked();
+    await expect(permission).toBeDisabled();
+  }
   await expect(dialog.getByRole("checkbox", { name: "View leads in Nemilink" })).toBeChecked();
+});
+
+test("staff lead action buttons reflect independent division permissions", async ({ page }) => {
+  await mockCrm(page, {}, {
+    ...staff, leadAccess: { MMC: false, ENGEN: false }, leadActions: { MMC: ["edit"], ENGEN: ["delete"] },
+  });
+  await page.route("**/api/leads?*", (route) => route.fulfill({ json: {
+    items: ["MMC", "ENGEN"].map((division) => ({
+      id: division, customer: `${division} prospect`, division, status: "New", priority: "Medium", version: 1,
+    })),
+    total: 2, page: 1, pageSize: 10, pages: 1, hasMore: false,
+  } }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Leads", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Edit MMC prospect", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete MMC prospect", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Edit ENGEN prospect", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Delete ENGEN prospect", exact: true })).toBeVisible();
 });
 
 for (const viewport of [{ width: 320, height: 740 }, { width: 375, height: 812 }, { width: 768, height: 1024 }, { width: 1024, height: 768 }, { width: 1440, height: 1000 }]) {

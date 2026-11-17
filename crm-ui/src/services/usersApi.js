@@ -10,7 +10,7 @@ export function createUser(form) {
   const payload = { name: form.name, email: form.email, role: form.role || "Staff", password: form.password };
   if (payload.role === "Staff" && form.leadAccess !== undefined) payload.leadAccess = form.leadAccess;
   if (payload.role === "Staff") {
-    for (const key of ["canEditFollowUps", "canDeleteFollowUps"]) if (form[key] !== undefined) payload[key] = form[key];
+    for (const key of ["leadActions", "canEditFollowUps", "canDeleteFollowUps"]) if (form[key] !== undefined) payload[key] = form[key];
   }
   return apiRequest("/api/users", { method: "POST", body: JSON.stringify(payload) });
 }
@@ -20,7 +20,7 @@ export function updateUser(account, form) {
   for (const key of ["name", "email", "role", "isActive"]) if (form[key] !== undefined) payload[key] = form[key];
   if ((form.role ?? account.role) === "Staff" && form.leadAccess !== undefined) payload.leadAccess = form.leadAccess;
   if ((form.role ?? account.role) === "Staff") {
-    for (const key of ["canEditFollowUps", "canDeleteFollowUps"]) if (form[key] !== undefined) payload[key] = form[key];
+    for (const key of ["leadActions", "canEditFollowUps", "canDeleteFollowUps"]) if (form[key] !== undefined) payload[key] = form[key];
   }
   if (form.password) payload.password = form.password;
   return apiRequest(`/api/users/${encodeURIComponent(account.id)}`, { method: "PUT", body: JSON.stringify(payload) });
