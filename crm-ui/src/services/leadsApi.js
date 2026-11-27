@@ -6,8 +6,8 @@ export const getLeads = (filters) => getCompleteList("/api/leads", filters);
 export const getLeadsPage = (filters) => getListPage("/api/leads", filters);
 
 // GET single lead
-export function getLeadById(id) {
-    return apiRequest(`/api/leads/${encodeURIComponent(id)}`);
+export function getLeadById(id, { archived = false } = {}) {
+    return apiRequest(`/api/leads/${encodeURIComponent(id)}${archived ? "?archived=true" : ""}`);
 }
 
 // CREATE lead

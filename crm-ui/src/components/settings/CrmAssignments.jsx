@@ -29,7 +29,7 @@ export default function CrmAssignments() {
   }
   return <section className="w-full min-w-0 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 shadow-sm sm:p-5">
     <h3 className="text-lg font-bold">CRM record access</h3>
-    <p className="mt-2 text-xs leading-6 text-slate-700">Staff can view all leads in their lead division. A lead assignment controls who can access its follow-ups. Assign customer profiles and quotations separately.</p>
+    <p className="mt-2 text-xs leading-6 text-slate-700">Staff can view leads in their assigned divisions. Assign individual actions inside a lead; actions without an individual assignee follow the lead owner. Assign customer profiles and quotations separately.</p>
     <label className="mt-4 block text-xs font-semibold">Record type<select disabled={busy} value={module} onChange={(event) => { setModule(event.target.value); setOffset(0); setNotice(""); }} className="mt-2 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 sm:max-w-xs"><option value="leads">Leads</option><option value="customers">Customers</option><option value="quotations">Quotations</option></select></label>
     {notice && <p role="status" className="mt-3 rounded-lg bg-slate-50 p-3 text-xs leading-5">{notice}</p>}
     {!current ? <p role="status" className="py-5 text-sm">Loading assignments...</p> : current.error ? <div className="py-4"><p role="alert" className="text-sm text-rose-900">{current.error}</p><Button variant="secondary" className="mt-3" onClick={() => setRevision((value) => value + 1)}>Retry</Button></div> : <>

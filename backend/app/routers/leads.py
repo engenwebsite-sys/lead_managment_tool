@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.services.crm_access import actor, get_crm_db, scoped, require_lead_action, require_lead_creation, creation_assignment
 from app.db.operations import database_operation
 from app.models.lead import Lead
-from app.models.follow_up import FollowUp
+from app.services.activity import entry, snapshot
 from app.schemas.common import error_details
 from app.schemas.lead import LeadCreate, LeadResponse, LeadUpdate
 from app.services.settings import enforce_lead_requirements, shared_settings
@@ -20,8 +20,11 @@ from app.services.settings import enforce_lead_requirements, shared_settings
 router = APIRouter(prefix="/api/leads", tags=["Leads"])
 
 
-def find_lead(db, lead_id, *, lock=False):
-    query = scoped(db, select(Lead).where(Lead.id == lead_id), Lead)
+def find_lead(db, lead_id, *, lock=False, archived=False):
+    user = actor(db)
+    if archived and user is not None and user.role != "Admin":
+        raise HTTPException(403, "Only administrators can view archived opportunities")
+    query = select(Lead).where(Lead.id == lead_id) if archived else scoped(db, select(Lead).where(Lead.id == lead_id), Lead)
     if lock:
         query = query.with_for_update()
     lead = db.scalar(query.execution_options(populate_existing=True))
@@ -42,7 +45,7 @@ def create_lead(data: LeadCreate, db: Session = Depends(get_crm_db)):
             payload["priority"] = settings.leads.defaultPriority
         enforce_lead_requirements(payload, settings.leads)
         validate_link(db, data.customer_id, data.customer)
-        lead = Lead(**payload, assignee_user_id=creation_assignment(db))
+        lead = Lead(**payload, assignee_user_id=creation_assignment(db), history=[entry(db, "Opportunity created.")])
         db.add(lead)
         db.commit()
         db.refresh(lead)
@@ -56,9 +59,9 @@ def get_leads(db: Session = Depends(get_crm_db), filters: Annotated[LeadList, Qu
 
 
 @router.get("/{lead_id}", response_model=LeadResponse)
-def get_lead(lead_id: str, db: Session = Depends(get_crm_db)):
+def get_lead(lead_id: str, db: Session = Depends(get_crm_db), archived: bool = False):
     with database_operation(db):
-        return find_lead(db, lead_id)
+        return find_lead(db, lead_id, archived=archived)
 
 
 @router.put("/{lead_id}", response_model=LeadResponse)
@@ -81,8 +84,10 @@ def update_lead(lead_id: str, data: LeadUpdate, db: Session = Depends(get_crm_db
         enforce_lead_requirements(validated, settings.leads, set(updates))
         validate_link(db, validated["customer_id"], validated["customer"], lead)
         claim_version(db, Lead, lead, data.expected_version)
+        before = snapshot(lead, updates)
         for field in updates:
             setattr(lead, field, validated[field])
+        lead.history = [*(lead.history or []), entry(db, "Opportunity details updated.", before, snapshot(lead, updates))]
         db.commit()
         db.refresh(lead)
         return lead
@@ -94,8 +99,7 @@ def delete_lead(lead_id: str, db: Session = Depends(get_crm_db), expectedVersion
         lead = find_lead(db, lead_id, lock=True)
         require_lead_action(db, lead.division, "delete")
         expected_version(db, lead, expectedVersion)
-        if db.scalar(select(FollowUp.id).where(FollowUp.lead_id == lead_id).limit(1)) is not None:
-            raise HTTPException(status_code=409, detail="This lead has follow-up history and cannot be deleted")
         claim_version(db, Lead, lead, expectedVersion)
-        db.delete(lead)
+        lead.deleted_at = datetime.now(timezone.utc)
+        lead.history = [*(lead.history or []), entry(db, "Opportunity archived; actions and history retained.")]
         db.commit()

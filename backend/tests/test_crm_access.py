@@ -178,7 +178,7 @@ class CrmAccessTests(unittest.TestCase):
         self.assertEqual(saved.json()["leadActions"], {"ENGEN": ["delete"]})
         self.assertEqual(self.client.get(engen, headers=staff).status_code, 401)
 
-    def test_followups_inherit_lead_access_and_reassignment(self):
+    def test_new_self_assigned_actions_keep_their_independent_owner(self):
         lead = self.lead()
         self.assign("leads", lead)
         result = self.client.post("/api/follow-ups", headers=self.headers[2], json={"leadId": lead["id"], "purpose": "Call", "dueAt": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(), "assignedTo": "Someone else"})
@@ -191,9 +191,125 @@ class CrmAccessTests(unittest.TestCase):
         self.assertEqual(self.client.delete(f"/api/follow-ups/{task['id']}", headers=self.headers[2]).status_code, 403)
         current = {**lead, "assigneeUserId": self.accounts[2].id, "version": 2}
         self.assertEqual(self.assign("leads", current, 3).status_code, 200)
-        self.assertEqual(self.client.get(f"/api/follow-ups/{task['id']}", headers=self.headers[2]).status_code, 404)
+        self.assertEqual(self.client.get(f"/api/follow-ups/{task['id']}", headers=self.headers[2]).status_code, 200)
         self.assertEqual(self.client.get(f"/api/follow-ups/{task['id']}", headers=self.headers[3]).status_code, 404)
-        self.assertEqual(self.client.post("/api/follow-ups", headers=self.headers[2], json={"leadId": lead["id"], "purpose": "Call", "dueAt": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()}).status_code, 404)
+        self.assertEqual(self.client.post("/api/follow-ups", headers=self.headers[2], json={"leadId": lead["id"], "purpose": "Call", "dueAt": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()}).status_code, 201)
+
+    def test_parallel_opportunity_actions_have_independent_scoped_assignees(self):
+        self.accounts[3].lead_division_access = {"MMC": False}
+        self.db.commit()
+        lead = self.lead()
+        due = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+        tasks = []
+        for index, staff in enumerate(self.accounts[2:]):
+            result = self.client.post("/api/follow-ups", json={"leadId": lead["id"], "purpose": ["Send presentation", "Prepare proposal"][index],
+                "dueAt": due, "assigneeUserId": staff.id, "assignedTo": "Forged display label"})
+            self.assertEqual(result.status_code, 201, result.text)
+            tasks.append(result.json())
+            self.assertEqual(result.json()["assignedTo"], staff.name)
+        for index in range(2):
+            headers = self.headers[index + 2]
+            rows = self.client.get("/api/follow-ups", headers=headers).json()
+            self.assertEqual([row["id"] for row in rows], [tasks[index]["id"]])
+            self.assertEqual(self.client.get(f"/api/follow-ups/{tasks[1-index]['id']}", headers=headers).status_code, 404)
+            self.assertEqual(self.client.put(f"/api/follow-ups/{tasks[index]['id']}", headers=headers, json={"expectedVersion": 1, "assigneeUserId": self.accounts[3-index].id}).status_code, 403)
+            metrics = self.client.get("/api/workspace/metrics", headers=headers).json()
+            self.assertEqual(metrics["followUps"]["All"], 1)
+        filtered = self.client.get("/api/follow-ups", params={"assigneeUserId": self.accounts[3].id}).json()
+        self.assertEqual([row["id"] for row in filtered], [tasks[1]["id"]])
+        self.accounts[3].lead_division_access = {"ENGEN": False}
+        self.db.commit()
+        self.assertEqual(self.client.get("/api/follow-ups", headers=self.headers[3]).json(), [])
+        denied = self.client.post("/api/follow-ups", json={"leadId": lead["id"], "purpose": "Invalid", "dueAt": due, "assigneeUserId": self.accounts[3].id})
+        self.assertEqual(denied.status_code, 422)
+        choices = self.client.get("/api/follow-ups/assignees", params={"leadId": lead["id"]}).json()
+        self.assertNotIn(self.accounts[3].id, {item["id"] for item in choices})
+
+    def test_completed_action_corrections_require_edit_grant_and_preserve_evidence(self):
+        lead = self.lead()
+        task = self.client.post("/api/follow-ups", json={"leadId": lead["id"], "purpose": "Send presentation",
+            "dueAt": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(), "assigneeUserId": self.accounts[2].id}).json()
+        path = f"/api/follow-ups/{task['id']}"
+        completed = self.client.put(path, headers=self.headers[2], json={"expectedVersion": 1, "status": "Completed", "outcome": "Connected", "completionNotes": "Presentation sent"})
+        self.assertEqual(completed.status_code, 200, completed.text)
+        self.assertEqual(self.client.put(path, headers=self.headers[2], json={"expectedVersion": 2, "completionNotes": "Corrected"}).status_code, 403)
+        self.accounts[2].can_edit_follow_ups = True
+        self.db.commit()
+        corrected = self.client.put(path, headers=self.headers[2], json={"expectedVersion": 2, "purpose": "Send revised presentation", "completionNotes": "Revised presentation sent"})
+        self.assertEqual(corrected.status_code, 200, corrected.text)
+        record = corrected.json()["record"]
+        self.assertEqual(record["status"], "Completed")
+        self.assertEqual(record["completedAt"], completed.json()["record"]["completedAt"])
+        self.assertEqual(record["history"][-1]["changes"]["completion_notes"]["before"], "Presentation sent")
+        self.assertEqual(len(self.client.get("/api/follow-ups").json()), 1)
+        self.assertEqual(self.client.put(path, json={"expectedVersion": 2, "notes": "stale"}).status_code, 409)
+        self.assertEqual(self.client.put(path, json={"expectedVersion": 3, "status": "Pending"}).status_code, 409)
+
+    def test_existing_lead_can_be_named_and_archived_without_losing_actions(self):
+        from app.models.lead import Lead
+        from app.models.follow_up import FollowUp
+        lead = self.lead()
+        path = f"/api/leads/{lead['id']}"
+        task = self.client.post("/api/follow-ups", json={"leadId": lead["id"], "purpose": "Send MOM",
+            "dueAt": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()}).json()
+        saved = self.client.put(path, json={"expectedVersion": 1, "opportunityName": "Billing Software"})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["history"][-1]["changes"]["opportunity_name"]["before"], "")
+        self.assertEqual(self.client.get("/api/follow-ups").json()[0]["opportunityName"], "Billing Software")
+        self.assertEqual(self.client.delete(path + "?expectedVersion=2").status_code, 204)
+        self.assertIsNotNone(self.db.get(Lead, lead["id"]))
+        self.assertIsNotNone(self.db.get(FollowUp, task["id"]))
+        self.assertEqual(self.client.get("/api/leads").json(), [])
+        self.assertEqual(self.client.get("/api/follow-ups").json(), [])
+        self.assertEqual(self.client.get(path).status_code, 404)
+        self.assertEqual(self.client.get(path + "?archived=true").json()["opportunityName"], "Billing Software")
+        self.assertEqual(len(self.client.get("/api/leads?archived=true").json()), 1)
+        self.assertEqual(len(self.client.get("/api/follow-ups", params={"leadId": lead["id"], "includeArchived": True}).json()), 1)
+        self.assertEqual(self.client.get("/api/leads?archived=true", headers=self.headers[2]).status_code, 403)
+        self.assertEqual(self.client.get("/api/follow-ups?includeArchived=true", headers=self.headers[2]).status_code, 403)
+        self.assertEqual(self.client.get("/api/workspace/metrics").json()["leads"]["total"], 0)
+        self.assertEqual(self.client.get("/api/reports/leads").json()["rows"], [])
+
+    def test_optional_contact_details_validate_search_and_preserve_existing_fields(self):
+        lead = self.lead()
+        self.assertEqual(lead["contactEmail"], "")
+        self.assertEqual(lead["contactPhone"], "")
+        path = f"/api/leads/{lead['id']}"
+        invalid = self.client.put(path, json={"expectedVersion": 1, "contactEmail": "invalid"})
+        self.assertEqual(invalid.status_code, 422)
+        saved = self.client.put(path, json={"expectedVersion": 1, "contactEmail": "  sales@example.test  ", "contactPhone": "+91 98765 43210"})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        record = saved.json()
+        self.assertEqual(record["contactEmail"], "sales@example.test")
+        self.assertEqual(record["customer"], lead["customer"])
+        self.assertEqual(record["description"], lead["description"])
+        self.assertEqual(record["history"][-1]["changes"]["contact_phone"]["before"], "")
+        for query in ("sales@example.test", "98765"):
+            self.assertEqual([item["id"] for item in self.client.get("/api/leads", params={"q": query}).json()], [lead["id"]])
+            self.assertEqual(self.client.get("/api/leads", params={"q": query}, headers=self.headers[3]).json(), [])
+        self.assertEqual(self.client.put(path, headers=self.headers[2], json={"expectedVersion": 2, "contactPhone": "Other"}).status_code, 403)
+        cleared = self.client.put(path, json={"expectedVersion": 2, "contactEmail": "", "contactPhone": ""})
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertEqual(cleared.json()["history"][-1]["changes"]["contact_email"]["before"], "sales@example.test")
+
+    def test_legacy_action_assignment_still_follows_lead_owner(self):
+        lead = self.lead()
+        self.assign("leads", lead)
+        task = self.client.post("/api/follow-ups", json={"leadId": lead["id"], "purpose": "Legacy action",
+            "dueAt": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()}).json()
+        from app.models.follow_up import FollowUp
+        self.assertIsNone(self.db.get(FollowUp, task["id"]).assignee_user_id)
+        corrected = self.client.put(f"/api/follow-ups/{task['id']}", json={"expectedVersion": 1, "notes": "Updated legacy notes"})
+        self.assertEqual(corrected.status_code, 200, corrected.text)
+        self.assertIsNone(corrected.json()["record"]["assigneeUserId"])
+        self.assertIsNone(self.db.get(FollowUp, task["id"]).assignee_user_id)
+        self.assertEqual(self.client.get(f"/api/follow-ups/{task['id']}", headers=self.headers[2]).status_code, 200)
+        self.accounts[3].lead_division_access = {"MMC": False}
+        self.db.commit()
+        reassigned = self.assign("leads", {**lead, "version": 2, "assigneeUserId": self.accounts[2].id}, 3)
+        self.assertEqual(reassigned.status_code, 200, reassigned.text)
+        self.assertEqual(self.client.get(f"/api/follow-ups/{task['id']}", headers=self.headers[2]).status_code, 404)
+        self.assertEqual(self.client.get(f"/api/follow-ups/{task['id']}", headers=self.headers[3]).status_code, 200)
 
     def test_follow_up_permissions_are_independent_and_keep_lead_scope(self):
         staff_account = self.accounts[2]

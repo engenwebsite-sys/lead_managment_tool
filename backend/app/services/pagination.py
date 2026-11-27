@@ -1,4 +1,5 @@
 from datetime import datetime, time, timedelta, timezone
+from fastapi import HTTPException
 from sqlalchemy import Text, case, cast, false, func, or_, select
 from app.models.lead import Lead
 from app.models.customer import Customer
@@ -18,9 +19,17 @@ def search(query, text, columns):
 
 
 def collection_query(db, model, filters, at):
-    query = scoped(db, select(model), model)
+    user = actor(db)
+    archived_leads = model is Lead and filters.archived
+    archived_tasks = model is FollowUp and filters.include_archived
+    if (archived_leads or archived_tasks) and user is not None and user.role != "Admin":
+        raise HTTPException(403, "Only administrators can view archived records")
+    query = select(model) if archived_leads or archived_tasks else scoped(db, select(model), model)
+    if archived_leads:
+        query = query.where(Lead.deleted_at.is_not(None))
     if model in {FollowUp, Quotation}:
-        query = query.where(model.deleted_at.is_(None))
+        if not archived_tasks:
+            query = query.where(model.deleted_at.is_(None))
     if model is not Customer:
         column = Lead.customer_id if model is FollowUp else model.customer_id
         if filters.customer_id:
@@ -28,11 +37,11 @@ def collection_query(db, model, filters, at):
         if filters.unlinked:
             query = query.where(column.is_(None))
     if model is FollowUp:
-        query = query.join(Lead, Lead.id == FollowUp.lead_id).outerjoin(User, User.id == Lead.assignee_user_id)
+        query = query.join(Lead, Lead.id == FollowUp.lead_id).outerjoin(User, User.id == func.coalesce(FollowUp.assignee_user_id, Lead.assignee_user_id))
         if filters.division:
             query = query.where(Lead.division == filters.division)
         if filters.assignee_user_id:
-            query = query.where(Lead.assignee_user_id == filters.assignee_user_id)
+            query = query.where(func.coalesce(FollowUp.assignee_user_id, Lead.assignee_user_id) == filters.assignee_user_id)
         if filters.lead_id:
             query = query.where(FollowUp.lead_id == filters.lead_id)
         if filters.assigned_to:
@@ -56,7 +65,7 @@ def collection_query(db, model, filters, at):
                 query = query.where(FollowUp.due_at < at)
             else:
                 query = query.where(FollowUp.due_at >= day_start + timedelta(days=1))
-        return search(query, filters.q, [Lead.customer, Lead.referred_by, FollowUp.purpose, FollowUp.notes, func.coalesce(User.name, FollowUp.assigned_to)])
+        return search(query, filters.q, [Lead.customer, Lead.opportunity_name, Lead.referred_by, FollowUp.purpose, FollowUp.notes, func.coalesce(User.name, FollowUp.assigned_to)])
     if filters.assignee_user_id:
         query = query.where(model.assignee_user_id == filters.assignee_user_id)
     if filters.division:
@@ -76,7 +85,7 @@ def collection_query(db, model, filters, at):
                 query = query.where(getattr(Lead, key) == getattr(filters, key))
         if filters.source:
             query = query.where(Lead.lead_source == filters.source)
-        return search(query, filters.q, [Lead.customer, Lead.contact, Lead.description, Lead.status, Lead.priority, Lead.lead_source, Lead.referred_by])
+        return search(query, filters.q, [Lead.customer, Lead.opportunity_name, Lead.contact, Lead.contact_email, Lead.contact_phone, Lead.description, Lead.status, Lead.priority, Lead.lead_source, Lead.referred_by])
     if filters.status:
         status = case(((Quotation.status == "Sent") & (Quotation.document["validUntil"].as_string() < at.astimezone(IST).date().isoformat()), "Expired"), else_=Quotation.status)
         query = query.where(status == filters.status)

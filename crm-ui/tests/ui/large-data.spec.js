@@ -7,7 +7,7 @@ async function navigate(page, name) {
   await page.locator('aside[aria-label="Workspace navigation"]').getByRole("button", { name, exact: true }).click();
 }
 
-for (const [module, title, seed] of [["customers", "Customers", customer], ["quotations", "Quotations", quote], ["follow-ups", "Follow-ups", followUp]]) {
+for (const [module, title, seed] of [["customers", "Customers", customer], ["quotations", "Quotations", quote], ["follow-ups", "Actions", followUp]]) {
   test(`${title} loads one bounded page and searches on the server`, async ({ page }) => {
     const errors = await mockCrm(page);
     const requests = [];
@@ -51,14 +51,14 @@ test("customer and lead pickers search bounded results on demand", async ({ page
   await expect(page.getByRole("textbox", { name: "Search customers", exact: true })).toBeVisible();
   await expect.poll(() => requests.length).toBe(1);
   expect(requests[0].searchParams.get("pageSize")).toBe("20");
-  await page.getByRole("button", { name: new RegExp(`ID: ${customer.id}`) }).click();
+  await page.getByRole("button", { name: new RegExp(customer.name) }).click();
   await expect(page.getByRole("textbox", { name: "Customer / company name" })).toHaveValue(customer.name);
-  await expect(page.getByText("Linked:", { exact: false })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Add a lead", exact: true }).getByText(customer.name, { exact: true })).toBeVisible();
   await page.getByRole("textbox", { name: "Customer / company name" }).fill("A different enquiry");
   await expect(page.getByText("Unlinked enquiry.", { exact: false })).toBeVisible();
   await page.keyboard.press("Escape");
-  await navigate(page, "Follow-ups");
-  await page.getByRole("button", { name: "Schedule follow-up", exact: true }).click();
+  await navigate(page, "Actions");
+  await page.getByRole("button", { name: "Add action", exact: true }).click();
   await page.getByRole("button", { name: "Select lead profile", exact: true }).click();
   await expect.poll(() => requests.filter((url) => url.pathname === "/api/leads").length).toBe(1);
   expect(requests.at(-1).searchParams.get("pageSize")).toBe("20");

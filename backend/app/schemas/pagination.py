@@ -25,6 +25,7 @@ class ListQuery(ApiModel):
 
 
 class LeadList(ListQuery):
+    archived: bool = False
     status: LeadStatus | None = None
     priority: Priority | None = None
     source: str | None = Field(default=None, max_length=100)
@@ -38,6 +39,7 @@ class CustomerList(ListQuery):
 
 
 class FollowUpList(ListQuery):
+    include_archived: bool = Field(default=False, alias="includeArchived")
     status: Literal["Pending", "Completed"] | None = None
     view: Literal["All", "Today", "Overdue", "Upcoming", "Completed"] = "All"
     date: Date | None = None

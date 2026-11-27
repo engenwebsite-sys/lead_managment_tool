@@ -13,6 +13,11 @@ class Lead(Base):
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     customer_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("customers.id", ondelete="RESTRICT", name="fk_leads_customer"), nullable=True, index=True)
     assignee_user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="RESTRICT", name="fk_leads_assignee"), nullable=True, index=True)
+    opportunity_name: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    contact_email: Mapped[str] = mapped_column(String(254), default="", server_default="")
+    contact_phone: Mapped[str] = mapped_column(String(40), default="", server_default="")
+    history: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
     id: Mapped[str] = mapped_column(

@@ -2,13 +2,14 @@ import { getCompleteList, getListPage, requireVersion } from "./paginationApi.js
 import { apiRequest } from "./apiClient.js";
 
 export function followUpPayload(record) {
-  const fields = ["leadId", "purpose", "type", "dueAt", "assignedTo", "priority", "reminderMinutes", "notes"];
-  return Object.fromEntries(fields.filter((field) => record[field] !== undefined).map((field) => [field, record[field]]));
+  const fields = ["leadId", "purpose", "type", "dueAt", "assignedTo", "assigneeUserId", "priority", "reminderMinutes", "notes"];
+  return Object.fromEntries(fields.filter((field) => record[field] !== undefined && (field !== "assigneeUserId" || Boolean(record[field]))).map((field) => [field, record[field]]));
 }
 
 export const getFollowUps = (filters) => getCompleteList("/api/follow-ups", filters);
 export const getFollowUpsPage = (filters) => getListPage("/api/follow-ups", filters);
 export const getFollowUpById = (id) => apiRequest(`/api/follow-ups/${encodeURIComponent(id)}`);
+export const getActionAssignees = (leadId, signal) => apiRequest(`/api/follow-ups/assignees?leadId=${encodeURIComponent(leadId)}`, { signal });
 export const getUpcomingFollowUps = () => getCompleteList("/api/follow-ups/upcoming");
 export const getOverdueFollowUps = () => getCompleteList("/api/follow-ups/overdue");
 export const createFollowUp = (record) => apiRequest("/api/follow-ups", { method: "POST", body: JSON.stringify(followUpPayload(record)) });
@@ -21,6 +22,7 @@ export function updateFollowUp(record, next) {
   if (record.status === "Completed") {
     payload.outcome = record.outcome;
     payload.completionNotes = record.completionNotes;
+    if (record.correctingCompleted) payload.completedAt = record.completedAt;
     if (next) payload.nextDueAt = next.dueAt;
   } else if (record.rescheduleReason) {
     payload.rescheduleReason = record.rescheduleReason;

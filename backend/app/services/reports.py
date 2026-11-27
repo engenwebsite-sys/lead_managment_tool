@@ -160,7 +160,7 @@ def sales_report(db, filters, now):
 def followups_report(db, filters, now):
     records = follow_rows(db, filters)
     rows = [{"id": x.id, "customer": lead.customer, "division": lead.division, "purpose": x.purpose,
-             "dueAt": utc(x.due_at), "assignedTo": follow_assignee_name(db, lead, x.assigned_to), "status": x.status, "priority": x.priority,
+             "dueAt": utc(x.due_at), "assignedTo": follow_assignee_name(db, lead, x.assigned_to, x.assignee_user_id), "status": x.status, "priority": x.priority,
              "overdue": x.status == "Pending" and utc(x.due_at) < now,
              "completedAt": utc(x.completed_at) if x.completed_at else None, "type": x.type} for x, lead in records]
     def counts(items):

@@ -83,15 +83,15 @@ function AccountForm({ account, adminCount, onSave, onClose }) {
         </div>
       </fieldset>}
       {form.role === "Staff" && <fieldset className="space-y-2">
-        <legend className="mb-2 text-xs font-semibold text-slate-800">Follow-up permissions</legend>
-        {[["canEditFollowUps", "Edit follow-ups"], ["canDeleteFollowUps", "Delete follow-ups"]].map(([key, label]) =>
+        <legend className="mb-2 text-xs font-semibold text-slate-800">Action permissions</legend>
+        {[["canEditFollowUps", "Edit actions"], ["canDeleteFollowUps", "Delete actions"]].map(([key, label]) =>
           <label key={key} className="flex min-h-9 items-center gap-2 text-sm text-slate-800">
             <input type="checkbox" checked={form[key]} className="size-4 accent-teal-800"
               onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.checked }))} />
             {label}
           </label>
         )}
-        <p className="text-xs text-slate-600">Applies to follow-ups this account can already access.</p>
+        <p className="text-xs text-slate-600">Applies to actions this account can already access.</p>
       </fieldset>}
       {!adminAvailable && <p className="text-xs leading-5 text-slate-600">Both Admin slots are used. New accounts can be Staff only until the second administrator is demoted.</p>}
       <div className="grid gap-4 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-800">{account ? "New password (optional)" : "Password"}<input type="password" required={!account} minLength={8} maxLength={128} autoComplete="new-password" className={fieldClass} {...bind("password")} /></label><label className="text-xs font-semibold text-slate-800">Confirm password<input type="password" required={!account || Boolean(form.password)} minLength={8} maxLength={128} autoComplete="new-password" className={fieldClass} {...bind("confirmPassword")} /></label></div>

@@ -5,7 +5,7 @@ const navigation = [
   { name: "Dashboard", icon: LayoutDashboard },
   { name: "Leads", icon: Users },
   { name: "Customers", icon: Building2 },
-  { name: "Follow-ups", icon: CalendarClock },
+  { name: "Actions", icon: CalendarClock },
   { name: "Events", icon: CalendarDays },
   { name: "Quotations", icon: FileText },
   { name: "Reports", icon: BarChart3 },

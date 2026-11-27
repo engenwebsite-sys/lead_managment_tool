@@ -10,6 +10,7 @@ Outcome = Literal["Connected", "No answer", "Requested callback", "Not intereste
 
 
 class FollowUpCreate(ApiModel):
+    assignee_user_id: str | None = Field(default=None, alias="assigneeUserId", min_length=1, max_length=36)
     lead_id: str = Field(alias="leadId", min_length=1, max_length=36)
     purpose: str = Field(min_length=1, max_length=200)
     type: FollowUpType = "Call"
@@ -21,6 +22,8 @@ class FollowUpCreate(ApiModel):
 
 
 class FollowUpUpdate(UpdateModel):
+    assignee_user_id: str | None = Field(default=None, alias="assigneeUserId", min_length=1, max_length=36)
+    completed_at: AwareDatetime | None = Field(default=None, alias="completedAt")
     purpose: str | None = Field(default=None, min_length=1, max_length=200)
     type: FollowUpType | None = None
     due_at: AwareDatetime | None = Field(default=None, alias="dueAt")
@@ -37,6 +40,9 @@ class FollowUpUpdate(UpdateModel):
 
 
 class FollowUpResponse(ApiModel):
+    assignee_user_id: str | None = Field(default=None, alias="assigneeUserId")
+    opportunity_name: str = Field(default="", alias="opportunityName")
+    deleted_at: datetime | None = Field(default=None, alias="deletedAt")
     customer_id: str | None = Field(default=None, alias="customerId")
     id: str
     lead_id: str = Field(alias="leadId")

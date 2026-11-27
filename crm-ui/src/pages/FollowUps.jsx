@@ -11,6 +11,7 @@ import { Avatar, Button, Card, CardHeading, EmptyState, IconButton } from "../co
 import Modal from "../components/Modal";
 import FollowUpEditor from "../components/followups/FollowUpEditor";
 import { formatFollowUpDate, isOverdue } from "../lib/followUps";
+import { activityChanges } from "../lib/activity";
 
 const selectClass = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100";
 const summaryItems = [
@@ -25,10 +26,10 @@ function FollowUpActions({ item, canEdit, canDelete, onEdit, onHistory, onDelete
     {item.status === "Pending" && <>
       <IconButton aria-label={`Complete ${item.purpose}`} title="Complete" onClick={() => onEdit("complete")}><Check size={17} /></IconButton>
       <IconButton aria-label={`Reschedule ${item.purpose}`} title="Reschedule" onClick={() => onEdit("reschedule")}><RefreshCw size={16} /></IconButton>
-      {canEdit && <IconButton aria-label={`Edit ${item.purpose}`} title="Edit follow-up" className="text-teal-800" onClick={() => onEdit("edit")}><Pencil size={16} /></IconButton>}
     </>}
+    {canEdit && <IconButton aria-label={`Edit ${item.purpose}`} title="Edit action" className="text-teal-800" onClick={() => onEdit("edit")}><Pencil size={16} /></IconButton>}
     <IconButton aria-label={`History for ${item.customer}`} title="Customer history" onClick={onHistory}><History size={17} /></IconButton>
-    {canDelete && <IconButton aria-label={`Delete ${item.purpose}`} title="Delete follow-up" className="text-rose-700" onClick={onDelete}><Trash2 size={16} /></IconButton>}
+    {canDelete && <IconButton aria-label={`Delete ${item.purpose}`} title="Delete action" className="text-rose-700" onClick={onDelete}><Trash2 size={16} /></IconButton>}
   </div>;
 }
 
@@ -58,7 +59,7 @@ export default function FollowUps({ now, onChanged }) {
     else await createFollowUp(record);
     onRefresh(); onChanged?.();
     setEditor(null);
-    setNotice(`Follow-up saved at ${new Date().toLocaleTimeString()}.`);
+    setNotice(`Action saved at ${new Date().toLocaleTimeString()}.`);
   }
 
   function actions(item) {
@@ -78,9 +79,9 @@ export default function FollowUps({ now, onChanged }) {
       setDeleteTarget(null);
       onRefresh();
       onChanged?.();
-      setNotice("Follow-up archived.");
+      setNotice("Action archived.");
     } catch (error) {
-      setDeleteError(error.message || "Could not delete the follow-up.");
+      setDeleteError(error.message || "Could not delete the action.");
       if (error.status === 409 || error.status === 404) onRefresh();
     } finally {
       deleteLock.current = false;
@@ -90,8 +91,8 @@ export default function FollowUps({ now, onChanged }) {
 
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-4">
-      <p className="max-w-xl text-xs leading-6 text-slate-700">Plan the next conversation. Track who introduced the customer.<br />All times are IST · Records are saved to the database.</p>
-      <Button disabled={!divisions.length || loading || Boolean(storageError)} onClick={() => setEditor({ mode: "schedule" })}><Plus size={17} />Schedule follow-up</Button>
+      <p className="max-w-xl text-xs leading-6 text-slate-700">Plan the next conversation. Track pending actions and completed work.<br />All times are IST.</p>
+      <Button disabled={!divisions.length || loading || Boolean(storageError)} onClick={() => setEditor({ mode: "schedule" })}><Plus size={17} />Add action</Button>
     </div>
 
     <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -105,22 +106,22 @@ export default function FollowUps({ now, onChanged }) {
 
     {storageError && <p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-900">{storageError} <button type="button" className="ml-2 font-semibold underline" onClick={onRefresh}>Retry</button></p>}
     {metrics.error && <p role="alert" className="text-xs text-rose-800">Summary: {metrics.error}</p>}
-    {loading && <p role="status" className="rounded-xl bg-teal-50 p-3 text-xs text-teal-950">Loading follow-ups from the database...</p>}
+    {loading && <p role="status" className="rounded-xl bg-teal-50 p-3 text-xs text-teal-950">Loading actions...</p>}
     {notice && <p role="status" className="rounded-xl border border-teal-200 bg-teal-50 p-4 text-xs text-teal-950">{notice}</p>}
 
     <Card>
-      <CardHeading title="Follow-up register" description="Customer tasks, reference contacts and conversation history." />
-      <div className="flex flex-wrap gap-2 border-y border-slate-100 px-5 py-3" aria-label="Follow-up views">
+      <CardHeading title="Action register" description="Tasks across your leads, reference contacts and conversation history." />
+      <div className="flex flex-wrap gap-2 border-y border-slate-100 px-5 py-3" aria-label="Action views">
         {["All", "Today", "Overdue", "Upcoming", "Completed"].map((name) => <button key={name} type="button" aria-pressed={tab === name} onClick={() => setTab(name)}
           className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${tab === name ? "bg-teal-900 text-white" : "text-slate-700 hover:bg-teal-50"}`}>{name}</button>)}
       </div>
       <div className="flex flex-wrap gap-3 px-4 py-3">
         <label className="flex min-w-0 basis-full sm:basis-44 flex-1 items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-slate-700 focus-within:ring-2 focus-within:ring-teal-100">
-          <Search size={16} /><input aria-label="Search follow-ups" placeholder="Customer, purpose or reference..." value={search} onChange={(event) => setSearch(event.target.value)} className="w-full bg-transparent text-xs outline-none placeholder:text-slate-500" />
+          <Search size={16} /><input aria-label="Search actions" placeholder="Customer, purpose or reference..." value={search} onChange={(event) => setSearch(event.target.value)} className="w-full bg-transparent text-xs outline-none placeholder:text-slate-500" />
         </label>
-        <select aria-label="Filter follow-ups by division" value={division} disabled={!divisions.length} onChange={(event) => setDivision(event.target.value)} className={selectClass}><option value="All divisions">{user.role === "Admin" ? "All divisions" : divisions.length ? "All assigned divisions" : "No divisions assigned"}</option>{divisions.map((name) => <option key={name} value={name}>{divisionLabel(name)}</option>)}</select>
-        <input aria-label="Filter follow-ups by staff" placeholder="Exact staff name" value={staff === "All staff" ? "" : staff} onChange={(event) => setStaff(event.target.value || "All staff")} maxLength={120} className={selectClass} />
-        <input aria-label="Filter follow-ups by date" type="date" value={date} onChange={(event) => setDate(event.target.value)} className={selectClass} />
+        <select aria-label="Filter actions by division" value={division} disabled={!divisions.length} onChange={(event) => setDivision(event.target.value)} className={selectClass}><option value="All divisions">{user.role === "Admin" ? "All divisions" : divisions.length ? "All assigned divisions" : "No divisions assigned"}</option>{divisions.map((name) => <option key={name} value={name}>{divisionLabel(name)}</option>)}</select>
+        <input aria-label="Filter actions by staff" placeholder="Exact staff name" value={staff === "All staff" ? "" : staff} onChange={(event) => setStaff(event.target.value || "All staff")} maxLength={120} className={selectClass} />
+        <input aria-label="Filter actions by date" type="date" value={date} onChange={(event) => setDate(event.target.value)} className={selectClass} />
         {(search || date || staff !== "All staff" || division !== "All divisions" || tab !== "All") && <Button variant="secondary" onClick={() => { setSearch(""); setDate(""); setStaff("All staff"); setDivision("All divisions"); setTab("All"); }}>Clear filters</Button>}
       </div>
       <div className="grid gap-3 px-3 pb-3 sm:grid-cols-2 lg:hidden">
@@ -128,6 +129,7 @@ export default function FollowUps({ now, onChanged }) {
           const overdue = isOverdue(item, now);
           return <article key={item.id} className={`min-w-0 rounded-xl border p-3 shadow-sm shadow-slate-900/5 ${overdue ? "border-rose-200 bg-rose-50/30" : "border-slate-200 bg-white"}`}>
             <div className="flex items-start gap-2.5"><Avatar name={item.customer} /><div className="min-w-0 flex-1"><button type="button" onClick={() => setHistory(item)} className="break-words text-left text-xs font-bold text-slate-950 hover:text-teal-800">{item.customer}</button><p className="mt-1 text-[11px] text-slate-700">{divisionLabel(item.division)}</p></div><span className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold ${item.status === "Completed" ? "bg-emerald-50 text-emerald-900" : overdue ? "bg-rose-100 text-rose-900" : "bg-amber-50 text-amber-900"}`}>{overdue ? "Overdue" : item.status}</span></div>
+            {item.opportunityName && <p className="mt-2 text-xs font-semibold text-teal-900">{item.opportunityName}</p>}
             <p className="my-3 break-words text-xs font-medium leading-5 text-slate-900">{item.purpose}</p>
             <p className={`flex items-start gap-2 text-[11px] leading-5 ${overdue ? "font-semibold text-rose-800" : "text-slate-700"}`}><CalendarClock size={14} className="mt-0.5 shrink-0" />{formatFollowUpDate(item.dueAt)} IST</p>
             <dl className="mt-3 space-y-1.5 text-[11px]"><div className="flex justify-between gap-3"><dt className="shrink-0 text-slate-600">Referred by</dt><dd className="min-w-0 break-words text-right font-semibold text-teal-900">{item.referredBy?.name || "Not specified"}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-600">Assigned to</dt><dd className="min-w-0 break-words text-right text-slate-900">{item.assignedTo}</dd></div></dl>
@@ -145,7 +147,7 @@ export default function FollowUps({ now, onChanged }) {
             return <tr key={item.id} className={`text-xs text-slate-800 transition-colors ${overdue ? "bg-rose-50/40 hover:bg-rose-50" : "hover:bg-teal-50/40"}`}>
               <td className="px-5 py-4"><button type="button" onClick={() => setHistory(item)} className="flex items-center gap-3 text-left hover:text-teal-800"><Avatar name={item.customer} /><span><strong className="block font-semibold">{item.customer}</strong><small className="mt-1 block text-slate-600">{divisionLabel(item.division)}</small></span></button></td>
               <td className="px-5 py-4"><strong className="block font-semibold">{item.referredBy?.name || "Not specified"}</strong><small className="mt-1 block text-slate-600">{item.referredBy?.company || item.leadSource || "—"}</small></td>
-              <td className="px-5 py-4"><span className="block max-w-55 truncate" title={item.purpose}>{item.purpose}</span><small className="mt-1 block text-slate-600">{item.type}</small></td>
+              <td className="px-5 py-4">{item.opportunityName && <strong className="block text-teal-900">{item.opportunityName}</strong>}<span className="block max-w-55 truncate" title={item.purpose}>{item.purpose}</span><small className="mt-1 block text-slate-600">{item.type}</small></td>
               <td className={`px-5 py-4 ${overdue ? "font-semibold text-rose-800" : ""}`}>{formatFollowUpDate(item.dueAt)}</td>
               <td className="px-5 py-4">{item.assignedTo}</td>
               <td className={`px-5 py-4 font-semibold ${item.priority === "High" ? "text-rose-800" : item.priority === "Medium" ? "text-amber-800" : "text-emerald-800"}`}>{item.priority}</td>
@@ -155,20 +157,20 @@ export default function FollowUps({ now, onChanged }) {
           })}</tbody>
         </table>
       </div>
-      {!pageRows.length && <EmptyState icon={CalendarClock} title={pagination.total ? "No matching follow-ups" : "Your next conversation starts here"} description={pagination.total ? "Try another view, date or reference name." : "Schedule a follow-up against a lead. Its reference contact will appear automatically."} />}
-      <footer className="border-t border-slate-200 px-5 py-4 text-xs text-slate-600">{pagination.total} matching follow-up(s) · Today includes overdue tasks due today.</footer>
+      {!pageRows.length && <EmptyState icon={CalendarClock} title={pagination.total ? "No matching actions" : "Your next conversation starts here"} description={pagination.total ? "Try another view, date or reference name." : "Add an action against a lead. Its reference contact will appear automatically."} />}
+      <footer className="border-t border-slate-200 px-5 py-4 text-xs text-slate-600">{pagination.total} matching action(s) · Today includes overdue tasks due today.</footer>
     </Card>
 
     <Pagination pagination={pagination} />
     {editor && <FollowUpEditor mode={editor.mode} record={editor.record} canEditDetails={canEdit} onClose={() => setEditor(null)} onSave={save} />}
-    {deleteTarget && <Modal title="Delete follow-up?" onClose={() => { if (!deleteLock.current) setDeleteTarget(null); }}>
+    {deleteTarget && <Modal title="Delete action?" onClose={() => { if (!deleteLock.current) setDeleteTarget(null); }}>
       <div className="space-y-4 p-5">
         <p className="text-sm text-slate-700">Archive <strong>{deleteTarget.purpose}</strong> for {deleteTarget.customer}?</p>
         {deleteError && <p role="alert" className="text-sm text-rose-800">{deleteError}</p>}
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="secondary" disabled={deleting} onClick={() => setDeleteTarget(null)}>Cancel</Button>
           <Button className="bg-rose-700 hover:bg-rose-800" disabled={deleting} onClick={confirmDelete}>
-            {deleting ? "Deleting..." : "Delete follow-up"}
+            {deleting ? "Deleting..." : "Delete action"}
           </Button>
         </div>
       </div>
@@ -184,6 +186,8 @@ export default function FollowUps({ now, onChanged }) {
           <p className="text-[11px] font-semibold text-teal-800">{formatFollowUpDate(entry.at)} IST</p>
           <strong className="mt-1 block text-xs text-slate-950">{entry.purpose}</strong>
           <p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-slate-700">{entry.message}</p>
+          {entry.actor && <p className="text-xs text-slate-600">By {entry.actor}</p>}
+          {activityChanges(entry).map((change) => <p key={change.field} className="break-words text-xs text-slate-600">{change.label}: {change.before} → {change.after}</p>)}
         </li>)}</ol>
       </div>
     </Modal>}

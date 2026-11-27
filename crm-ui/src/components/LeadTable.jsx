@@ -45,6 +45,8 @@ export default function LeadTable({
     onViewAll,
     onUpdateLead,
     onDeleteLead,
+    onOpenLead,
+    onEditDetails,
     canEditLead,
     canDeleteLead,
     remote,
@@ -62,10 +64,19 @@ export default function LeadTable({
     const actionsAvailable = !compact && !remote?.pagination.loading;
     const canEdit = (lead) => actionsAvailable && onUpdateLead && canEditLead?.(lead);
     const canDelete = (lead) => actionsAvailable && onDeleteLead && canDeleteLead?.(lead);
+    function openRow(event, lead) {
+        if (!onOpenLead || editingId === lead.id || savingId !== null || remote?.pagination.loading) return;
+        if (event.type === "keydown") {
+            if (event.target !== event.currentTarget || !["Enter", " "].includes(event.key)) return;
+            event.preventDefault();
+        } else if (event.target.closest("button, a, input, select, textarea, label, summary")) return;
+        onOpenLead(lead);
+    }
 
     // START EDIT
     function startEdit(lead) {
         if (!canEdit(lead) || savingId !== null) return;
+        if (onEditDetails) { onEditDetails(lead); return; }
 
         setEditingId(lead.id);
         setEditVersion(lead.version);
@@ -112,7 +123,7 @@ export default function LeadTable({
         if (!canDelete(lead) || savingId !== null) return;
 
         const confirmed = window.confirm(
-            `Are you sure you want to delete ${lead.customer}?`
+            `Archive ${lead.opportunityName || lead.customer}? Its actions and history will be retained.`
         );
 
         if (!confirmed) return;
@@ -141,7 +152,10 @@ export default function LeadTable({
     const filtered = remote ? leads : leads.filter((lead) =>
         [
             lead.customer,
+            lead.opportunityName,
             lead.contact,
+            lead.contactEmail,
+            lead.contactPhone,
             divisionLabel(lead.division),
             lead.description,
             lead.status,
@@ -202,15 +216,17 @@ export default function LeadTable({
                 {displayed.map((lead) => (
                     <article
                         key={lead.id}
-                        className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm shadow-slate-900/5 transition-shadow duration-200 hover:shadow-md"
+                        tabIndex={onOpenLead ? 0 : undefined}
+                        aria-label={onOpenLead ? `Open details for ${lead.customer}${lead.opportunityName ? ` · ${lead.opportunityName}` : ""}` : undefined}
+                        onClick={(event) => openRow(event, lead)} onKeyDown={(event) => openRow(event, lead)}
+                        className={`min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm shadow-slate-900/5 transition-shadow duration-200 hover:shadow-md focus-visible:outline-2 focus-visible:outline-teal-700 ${onOpenLead ? "cursor-pointer" : ""}`}
                     >
                         <div className="flex items-start gap-2.5">
                             <Avatar name={lead.customer} />
 
                             <div className="min-w-0">
-                                <strong className="block break-words text-xs font-semibold text-slate-950">
-                                    {lead.customer}
-                                </strong>
+                                {onOpenLead ? <button type="button" onClick={() => onOpenLead(lead)} className="block break-words text-left text-xs font-semibold text-teal-900 underline">{lead.customer}</button> : <strong className="block break-words text-xs font-semibold text-slate-950">{lead.customer}</strong>}
+                                {lead.opportunityName && <p className="mt-1 break-words text-xs font-semibold text-teal-900">{lead.opportunityName}</p>}
 
                                 <p className="mt-1 text-[11px] text-slate-600">
                                     {lead.contact || "Contact not added"}
@@ -221,6 +237,7 @@ export default function LeadTable({
                         <p className="my-3 break-words text-xs leading-5 text-slate-700">
                             {lead.description}
                         </p>
+                        {(lead.contactEmail || lead.contactPhone) && <div className="mb-3 space-y-1 text-xs text-slate-700">{lead.contactEmail && <p className="break-all">{lead.contactEmail}</p>}{lead.contactPhone && <p>{lead.contactPhone}</p>}</div>}
 
                         <div className="flex flex-wrap items-center gap-2">
                             <span
@@ -370,6 +387,7 @@ export default function LeadTable({
                         <tr>
                             {[
                                 "Customer",
+                                ...(!compact ? ["Email / phone"] : []),
                                 "Division",
                                 "Referred By",
                                 "Requirement",
@@ -388,7 +406,10 @@ export default function LeadTable({
                         {displayed.map((lead) => (
                             <tr
                                 key={lead.id}
-                                className="text-xs text-slate-700 transition-colors hover:bg-teal-50/50"
+                                tabIndex={onOpenLead ? 0 : undefined}
+                                aria-label={onOpenLead ? `Open details for ${lead.customer}${lead.opportunityName ? ` · ${lead.opportunityName}` : ""}` : undefined}
+                                onClick={(event) => openRow(event, lead)} onKeyDown={(event) => openRow(event, lead)}
+                                className={`text-xs text-slate-700 transition-colors hover:bg-teal-50/50 focus-visible:outline-2 focus-visible:outline-teal-700 ${onOpenLead ? "cursor-pointer" : ""}`}
                             >
                                 {/* CUSTOMER */}
                                 <td className="px-5 py-4">
@@ -396,9 +417,8 @@ export default function LeadTable({
                                         <Avatar name={lead.customer} />
 
                                         <div>
-                                            <strong className="block font-semibold text-slate-950">
-                                                {lead.customer}
-                                            </strong>
+                                            {onOpenLead ? <button type="button" onClick={() => onOpenLead(lead)} className="block text-left font-semibold text-teal-900 underline">{lead.customer}</button> : <strong className="block font-semibold text-slate-950">{lead.customer}</strong>}
+                                            {lead.opportunityName && <small className="mt-1 block font-semibold text-teal-900">{lead.opportunityName}</small>}
 
                                             <small className="mt-1 block text-[11px] text-slate-600">
                                                 {lead.contact || "Contact not added"}
@@ -408,6 +428,7 @@ export default function LeadTable({
                                 </td>
 
                                 {/* DIVISION */}
+                                {!compact && <td className="px-5 py-4"><div className="max-w-52 whitespace-normal break-words">{lead.contactEmail && <p className="break-all">{lead.contactEmail}</p>}{lead.contactPhone && <p className="mt-1">{lead.contactPhone}</p>}{!lead.contactEmail && !lead.contactPhone && <span className="text-slate-500">—</span>}</div></td>}
                                 <td className="px-5 py-4 font-medium text-slate-800">
                                     {divisionLabel(lead.division)}
                                 </td>

@@ -279,7 +279,7 @@ function CustomerDetails({
                                 <Card key={lead.id} className="p-4">
                                     <div className="flex flex-wrap justify-between gap-2">
                                         <strong className="text-xs text-slate-950">
-                                            {lead.description}
+                                            {lead.opportunityName || lead.description}
                                         </strong>
                                         <span className="text-[11px] font-semibold text-teal-900">
                                             {lead.status}

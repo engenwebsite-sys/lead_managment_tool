@@ -75,8 +75,8 @@ test("customer, quotation and follow-up controls show only staff divisions", asy
     .getByRole("option")).toHaveText(["Nemilink", "ENGEN"]);
   await page.keyboard.press("Escape");
 
-  await navigate(page, "Follow-ups");
-  await expect(page.getByRole("combobox", { name: "Filter follow-ups by division" }).getByRole("option")).toHaveText(options);
+  await navigate(page, "Actions");
+  await expect(page.getByRole("combobox", { name: "Filter actions by division" }).getByRole("option")).toHaveText(options);
 });
 
 test("clearing division view access also clears and disables lead add, edit and delete", async ({ page }) => {
@@ -144,7 +144,7 @@ for (const viewport of [{ width: 320, height: 740 }, { width: 375, height: 812 }
       await settingsTab(page, name);
       await noHorizontalOverflow(page);
     }
-    for (const name of ["Leads", "Customers", "Follow-ups", "Quotations", "Reports"]) {
+    for (const name of ["Leads", "Customers", "Actions", "Quotations", "Reports"]) {
       await navigate(page, name);
       await expect(page.getByRole("heading", { name, exact: true }).first()).toBeVisible();
       await noHorizontalOverflow(page);
@@ -180,7 +180,7 @@ for (const width of [375, 768, 1440]) {
     const errors = await mockCrm(page);
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Workspace overview", exact: true })).toBeVisible();
-    for (const [destination, button] of [["Dashboard", "Add lead"], ["Customers", "Add customer"], ["Follow-ups", "Schedule follow-up"], ["Quotations", "Create quotation"]]) {
+    for (const [destination, button] of [["Dashboard", "Add lead"], ["Customers", "Add customer"], ["Actions", "Add action"], ["Quotations", "Create quotation"]]) {
       if (destination !== "Dashboard") await navigate(page, destination);
       await page.getByRole("button", { name: button, exact: true }).click();
       const dialog = page.getByRole("dialog");

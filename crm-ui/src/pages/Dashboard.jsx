@@ -105,7 +105,7 @@ function FollowUpQueue({ followUps, now, onView, metrics }) {
     return (
         <Card className="flex flex-col">
             <CardHeading
-                title="Follow-up queue"
+                title="Action queue"
                 description="Keep the conversation moving."
             >
                 <span className="flex size-9 items-center justify-center rounded-xl bg-teal-50 text-teal-800">
@@ -122,7 +122,7 @@ function FollowUpQueue({ followUps, now, onView, metrics }) {
                     <EmptyState
                         icon={CheckCheck}
                         title="You're all caught up"
-                        description="No scheduled follow-ups are pending."
+                        description="No scheduled actions are pending."
                     />
                 ) : (
                     pending.slice(0, 3).map((lead) => (
@@ -150,7 +150,7 @@ function FollowUpQueue({ followUps, now, onView, metrics }) {
             <div className="mx-4 mb-4 mt-auto pt-3">
                 <button type="button" onClick={onView} className="flex w-full items-center gap-2 rounded-lg bg-lime-50 px-3 py-3 text-left text-xs font-semibold text-teal-900 hover:bg-lime-100">
                     <Clock3 size={15} />
-                    {metrics ? metrics.All - metrics.Completed : pending.length} pending · View follow-ups
+                    {metrics ? metrics.All - metrics.Completed : pending.length} pending · View actions
                 </button>
             </div>
         </Card>

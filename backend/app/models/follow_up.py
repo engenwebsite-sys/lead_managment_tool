@@ -21,6 +21,7 @@ class FollowUp(Base):
     type: Mapped[str] = mapped_column(String(20), default="Call")
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     assigned_to: Mapped[str] = mapped_column(String(100), default="Admin")
+    assignee_user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="RESTRICT", name="fk_follow_ups_assignee"), nullable=True, index=True)
     priority: Mapped[str] = mapped_column(String(20), default="Medium")
     reminder_minutes: Mapped[int] = mapped_column(Integer, default=30)
     notes: Mapped[str] = mapped_column(Text, default="")

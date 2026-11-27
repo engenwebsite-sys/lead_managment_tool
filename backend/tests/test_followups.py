@@ -82,7 +82,10 @@ class FollowUpTests(unittest.TestCase):
         self.assertEqual(len(router.get_follow_ups(self.db)), 2)
         self.db.refresh(self.lead)
         self.assertEqual(self.lead.status, "New")
-        self.error(409, router.update_follow_up, item.id, FollowUpUpdate(status="Completed", outcome="Connected", completionNotes="Retry"), self.db)
+        correction = router.update_follow_up(item.id, FollowUpUpdate(status="Completed", outcome="Connected", completionNotes="Corrected notes"), self.db)
+        self.assertEqual(correction.record.status, "Completed")
+        self.assertEqual(correction.record.history[-1]["changes"]["completion_notes"]["before"], "Send the design brief")
+        self.assertEqual(len(router.get_follow_ups(self.db)), 2)
 
     def test_invalid_next_date_leaves_original_pending(self):
         item = self.create()
@@ -104,7 +107,10 @@ class FollowUpTests(unittest.TestCase):
         archived = self.db.get(FollowUp, item.id)
         self.assertIsNotNone(archived.deleted_at)
         self.assertIn("archived", archived.history[-1]["message"])
-        self.error(409, delete_lead, self.lead.id, self.db)
+        delete_lead(self.lead.id, self.db)
+        self.db.refresh(self.lead)
+        self.assertIsNotNone(self.lead.deleted_at)
+        self.assertIsNotNone(self.db.get(FollowUp, item.id))
 
     def test_missing_lead_and_invalid_fields(self):
         self.error(404, router.create_follow_up, FollowUpCreate(leadId="missing", purpose="Call", dueAt=self.now), self.db)

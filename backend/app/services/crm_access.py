@@ -1,6 +1,6 @@
 """Explicit CRM query and mutation policy. Display names never grant access."""
 from fastapi import Depends, HTTPException
-from sqlalchemy import Text, cast, or_, select, false
+from sqlalchemy import Text, cast, or_, and_, select, false
 from app.core.security import get_current_user
 from app.db.database import get_db
 from app.models.lead import Lead
@@ -28,6 +28,10 @@ def scoped(db, query, model):
     user = actor(db)
     from app.models.quotation import Quotation
     from app.services.permissions import quotations_allowed
+    if model is Lead:
+        query = query.where(Lead.deleted_at.is_(None))
+    if model is FollowUp:
+        query = query.where(FollowUp.lead_id.in_(select(Lead.id).where(Lead.deleted_at.is_(None))))
     if model is Quotation and not quotations_allowed(user):
         return query.where(false())
     if user is not None and user.role == "Staff":
@@ -37,8 +41,10 @@ def scoped(db, query, model):
         if model is Lead:
             return query.where(Lead.division.in_(divisions))
         if model is FollowUp:
-            leads = scoped(db, select(Lead.id), Lead).where(Lead.assignee_user_id == user.id)
-            return query.where(FollowUp.lead_id.in_(leads))
+            leads = scoped(db, select(Lead.id), Lead)
+            owned = leads.where(Lead.assignee_user_id == user.id)
+            return query.where(FollowUp.lead_id.in_(leads), or_(FollowUp.assignee_user_id == user.id,
+                and_(FollowUp.assignee_user_id.is_(None), FollowUp.lead_id.in_(owned))))
         query = query.where(model.assignee_user_id == user.id)
         if model is Quotation:
             return query.where(Quotation.division.in_(divisions))
@@ -95,9 +101,46 @@ def enforce_follow_assignment(db, payload):
         payload["assigned_to"] = user.name
 
 
-def follow_assignee_name(db, lead, fallback):
-    if lead.assignee_user_id:
-        user = db.get(User, lead.assignee_user_id)
+def follow_assignee_name(db, lead, fallback, assignee_user_id=None):
+    effective_id = assignee_user_id or lead.assignee_user_id
+    if effective_id:
+        user = db.get(User, effective_id)
         if user is not None:
             return user.name
     return fallback
+
+
+def require_follow_lead(db, lead):
+    user = actor(db)
+    if lead is None or lead.deleted_at is not None:
+        raise HTTPException(404, "Lead not found")
+    if user is not None and user.role == "Staff":
+        if lead.division not in user.lead_access:
+            raise HTTPException(404, "Lead not found")
+        if lead.assignee_user_id != user.id and db.scalar(select(FollowUp.id).where(
+            FollowUp.lead_id == lead.id, FollowUp.assignee_user_id == user.id,
+            FollowUp.deleted_at.is_(None)).limit(1)) is None:
+            raise HTTPException(404, "Lead not found")
+    return lead
+
+
+def assign_follow_up(db, lead, payload, current=None):
+    """Only admins assign other accounts; IDs, never display names, grant access."""
+    user = actor(db)
+    requested = payload.get("assignee_user_id")
+    if user is not None and user.role == "Staff":
+        effective = (current.assignee_user_id or lead.assignee_user_id) if current else user.id
+        if requested is not None and requested != effective:
+            raise HTTPException(403, "Only administrators can reassign actions")
+        requested = effective
+    if requested is not None:
+        if current is not None and requested == current.assignee_user_id:
+            payload["assigned_to"] = current.assigned_to
+            return payload
+        account = db.scalar(select(User).where(User.id == requested).with_for_update())
+        if account is None or not account.is_active or (account.role == "Staff" and lead.division not in account.lead_access):
+            raise HTTPException(422, "Select an active account with access to this division")
+        payload.update(assignee_user_id=account.id, assigned_to=account.name)
+    elif current is None:
+        payload["assignee_user_id"] = None
+    return payload

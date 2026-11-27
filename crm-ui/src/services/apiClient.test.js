@@ -72,3 +72,20 @@ test("follow-up create strips client history and completion uses one versioned r
   assert.equal(calls[1].body.nextDueAt, "2026-11-06T10:00:00Z");
   assert.equal("leadId" in calls[1].body, false);
 });
+
+test("editing legacy actions retains fallback assignments and corrections retain closed status", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push(JSON.parse(options.body));
+    return { ok: true, status: 200, json: async () => ({ record: { id: "saved" } }) };
+  });
+  await updateFollowUp({ id: "legacy", version: 3, status: "Pending", assigneeUserId: null, notes: "Updated" });
+  assert.equal("assigneeUserId" in calls[0], false);
+  await updateFollowUp({ id: "closed", version: 4, status: "Completed", correctingCompleted: true,
+    assigneeUserId: "ajay", outcome: "Connected", completionNotes: "Corrected", completedAt: "2026-11-17T10:00:00Z" });
+  assert.equal(calls[1].status, "Completed");
+  assert.equal(calls[1].completedAt, "2026-11-17T10:00:00Z");
+  assert.equal(calls[1].assigneeUserId, "ajay");
+  assert.equal("correctingCompleted" in calls[1], false);
+  assert.equal("nextDueAt" in calls[1], false);
+});

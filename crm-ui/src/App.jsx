@@ -221,18 +221,18 @@ function Workspace({ user, onLogout, signingOut }) {
               onViewLeads={() => navigate("Leads")}
               followUps={data?.queue || []}
               now={now}
-              onViewFollowUps={() => navigate("Follow-ups")}
+              onViewFollowUps={() => navigate("Actions")}
             />
           ) : <Card className="p-5"><p role={overview.error ? "alert" : "status"} className="text-sm text-slate-800">{overview.error || "Loading workspace summary..."}</p></Card>) : page === "Leads" ? (
             <LeadRegister division={division} revision={revision} user={user}
-              onUpdateLead={handleUpdateLead} onDeleteLead={handleDeleteLead} />
+              onUpdateLead={handleUpdateLead} onDeleteLead={handleDeleteLead} onChanged={changed} />
           ) : page === "Customers" ? (
             <Customers onChanged={changed} />
           ) : page === "Settings" ? (
             <Settings user={user} />
           ) : page === "Quotations" ? (
             canQuotes ? <Quotations onChanged={changed} /> : <Card className="p-4">Quotation access is disabled.</Card>
-          ) : page === "Follow-ups" ? (
+          ) : page === "Actions" ? (
             <FollowUps now={now} onChanged={changed} />
           ) : page === "Events" ? (
             <Events user={user} />

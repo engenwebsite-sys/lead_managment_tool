@@ -12,13 +12,13 @@ const fieldClass =
 const labelClass =
     "flex min-w-0 flex-col gap-2 text-xs font-semibold text-slate-800";
 
-export default function AddLeadModal({ onClose, onSave, saveError = "", saving = false, allowedDivisions = divisions, preferredDivision }) {
+export default function AddLeadModal({ onClose, onSave, saveError = "", saving = false, allowedDivisions = divisions, preferredDivision, initialLead }) {
     const preferences = runtimeSettings();
     const fixedDivision = allowedDivisions.length === 1 ? allowedDivisions[0] : null;
     const defaultDivision = [preferredDivision, preferences.workspace.defaultDivision, "nemilink"]
         .find((division) => allowedDivisions.includes(division)) ?? allowedDivisions[0];
     const dialogRef = useRef(null);
-    const [customerLink, setCustomerLink] = useState({ customer: "", customerId: null });
+    const [customerLink, setCustomerLink] = useState({ customer: initialLead?.customer || "", customerId: initialLead?.customerId || null });
     const [error, setError] = useState("");
 
     useEffect(() => {
@@ -35,7 +35,7 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
         const customer = String(data.get("customer")).trim();
         const description = String(data.get("description")).trim();
 
-        if (!customer || (preferences.leads.requireDescription && !description)) {
+        if (!customer || (preferences.leads.requireDescription && !description && (!initialLead || initialLead.description))) {
             setError("Enter a customer name and requirement.");
             return;
         }
@@ -44,7 +44,8 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
         const needsReference = ["Referral", "Known Network"].includes(leadSource);
         const referenceId = String(data.get("referredById") || "");
 
-        if (needsReference && !referenceId) {
+        const retainedReference = initialLead?.leadSource === leadSource ? initialLead.referredBy : null;
+        if (needsReference && !referenceId && !retainedReference) {
             setError("Select or add a reference contact.");
             return;
         }
@@ -53,20 +54,23 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
         onSave({
             id: crypto.randomUUID(),
             customer,
+            opportunityName: String(data.get("opportunityName") || "").trim(),
             customerId: customerLink.customerId,
             description,
             contact: String(data.get("contact")).trim(),
+            contactEmail: String(data.get("contactEmail") || "").trim(),
+            contactPhone: String(data.get("contactPhone") || "").trim(),
             division: fixedDivision || String(data.get("division")),
             priority: String(data.get("priority")),
-            status: preferences.leads.defaultStatus,
+            status: initialLead ? String(data.get("status")) : preferences.leads.defaultStatus,
             leadSource,
-            referredBy: needsReference ? {
+            referredBy: needsReference ? (referenceId ? {
                 id: referenceId,
                 name: String(data.get("referredByName") || ""),
                 company: String(data.get("referredByCompany") || ""),
                 phone: String(data.get("referredByPhone") || ""),
                 email: String(data.get("referredByEmail") || ""),
-            } : null,
+            } : retainedReference) : null,
             referenceNotes: needsReference ? String(data.get("referenceNotes") || "").trim() : "",
         });
     }
@@ -88,13 +92,13 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
                 <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-4 sm:p-5">
                     <div>
                         <p className="text-[10px] font-bold tracking-[0.18em] text-teal-800">
-                            NEW OPPORTUNITY
+                            {initialLead ? "OPPORTUNITY" : "NEW OPPORTUNITY"}
                         </p>
                         <h2
                             id="lead-dialog-title"
                             className="mt-2 text-xl font-bold text-slate-950"
                         >
-                            Add a lead
+                            {initialLead ? "Edit lead" : "Add a lead"}
                         </h2>
                         <p className="mt-2 text-xs leading-5 text-slate-700">
                             Start with the essentials. Build the relationship.
@@ -115,21 +119,34 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
                         </div>
 
                         <label className={labelClass}>
+                            Project / opportunity name
+                            <input name="opportunityName" maxLength={200} defaultValue={initialLead?.opportunityName || ""} placeholder="Billing Software, Elder Care..." className={fieldClass} />
+                        </label>
+                        <label className={labelClass}>
                             Contact person
                             <input
                                 name="contact"
-                                required={preferences.leads.requireContact}
+                                defaultValue={initialLead?.contact || ""}
+                                required={preferences.leads.requireContact && (!initialLead || Boolean(initialLead.contact))}
                                 placeholder="Customer name"
-                                maxLength={80}
+                                maxLength={150}
                                 className={fieldClass}
                             />
                         </label>
 
                         <label className={labelClass}>
+                            Contact email (optional)
+                            <input name="contactEmail" type="email" maxLength={254} defaultValue={initialLead?.contactEmail || ""} placeholder="name@company.com" className={fieldClass} />
+                        </label>
+                        <label className={labelClass}>
+                            Phone number (optional)
+                            <input name="contactPhone" type="tel" maxLength={40} defaultValue={initialLead?.contactPhone || ""} placeholder="+91 98765 43210" className={fieldClass} />
+                        </label>
+                        <label className={labelClass}>
                             Division *
                             {fixedDivision ? <span className={fieldClass}>{divisionLabel(fixedDivision)}</span> : <select
                                 name="division"
-                                defaultValue={defaultDivision}
+                                defaultValue={initialLead?.division || defaultDivision}
                                 className={fieldClass}
                             >
                                 {allowedDivisions.map((division) => (
@@ -142,7 +159,7 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
                             Priority *
                             <select
                                 name="priority"
-                                defaultValue={preferences.leads.defaultPriority}
+                                defaultValue={initialLead?.priority || preferences.leads.defaultPriority}
                                 className={fieldClass}
                             >
                                 <option>High</option>
@@ -151,16 +168,18 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
                             </select>
                         </label>
 
-                        <ReferralFields />
+                        {initialLead && <label className={labelClass}>Status<select name="status" defaultValue={initialLead.status} className={fieldClass}>{["New", "In Progress", "Follow-up", "Won", "Lost"].map((name) => <option key={name}>{name}</option>)}</select></label>}
+                        <ReferralFields initialSource={initialLead?.leadSource} initialReference={initialLead?.referredBy} initialNotes={initialLead?.referenceNotes} />
 
                         <label className={`${labelClass} sm:col-span-2`}>
                             Requirement *
                             <textarea
                                 name="description"
+                                defaultValue={initialLead?.description || ""}
                                 placeholder="Describe the embedded, IoT or software requirement..."
-                                required={preferences.leads.requireDescription}
+                                required={preferences.leads.requireDescription && (!initialLead || Boolean(initialLead.description))}
                                 rows={4}
-                                maxLength={500}
+                                maxLength={10000}
                                 className={`${fieldClass} resize-y`}
                             />
                         </label>
@@ -180,7 +199,7 @@ export default function AddLeadModal({ onClose, onSave, saveError = "", saving =
                             Cancel
                         </Button>
                         <Button type="submit" disabled={saving}>
-                            <Plus size={16} /> {saving ? "Saving..." : "Create lead"}
+                            <Plus size={16} /> {saving ? "Saving..." : initialLead ? "Save lead" : "Create lead"}
                         </Button>
                     </footer>
                     </fieldset>

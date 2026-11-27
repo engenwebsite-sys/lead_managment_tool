@@ -29,8 +29,8 @@ def assignments(module: Literal["leads", "customers", "quotations"] = "leads",
     with database_operation(db):
         model = MODELS[module]
         query = select(model).order_by(model.created_at.desc(), model.id)
-        if model is Quotation:
-            query = query.where(Quotation.deleted_at.is_(None))
+        if model in {Lead, Quotation}:
+            query = query.where(model.deleted_at.is_(None))
         query = search(query, q.strip(), [Customer.name] if model is Customer else [Quotation.number, Quotation.customer] if model is Quotation else [Lead.customer, Lead.contact])
         records = db.scalars(query.offset(offset).limit(limit + 1)).all()
         users = db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.name, User.id)).all()
@@ -46,7 +46,7 @@ def assign(module: Literal["leads", "customers", "quotations"], record_id: str, 
     with database_operation(db):
         model = MODELS[module]
         item = db.scalar(select(model).where(model.id == record_id).with_for_update().execution_options(populate_existing=True))
-        if item is None or (model is Quotation and item.deleted_at is not None):
+        if item is None or (model in {Lead, Quotation} and item.deleted_at is not None):
             raise HTTPException(404, "Record not found")
         expected_version(db, item, data.expectedVersion)
         if item.assignee_user_id != data.expectedAssigneeUserId:
